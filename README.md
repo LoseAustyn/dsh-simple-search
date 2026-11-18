@@ -1,5 +1,8 @@
 # Simple Search（简单搜索）
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Supported DSH versions: 0.2.2-rc.2+](https://img.shields.io/badge/DSH-0.2.2--rc.2%2B-4d6bfe)](https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions)
+
 [简体中文](README.zh-CN.md)
 
 A DSH Web UI plugin: press **Shift twice** anywhere in the page to open a

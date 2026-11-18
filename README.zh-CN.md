@@ -1,5 +1,8 @@
 # 简单搜索（Simple Search）
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![支持的 DSH 版本: 0.2.2-rc.2+](https://img.shields.io/badge/DSH-0.2.2--rc.2%2B-4d6bfe)](https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions)
+
 [English](README.md)
 
 一个 DSH Web UI 插件：在页面任意位置**双击 Shift**，即可打开 JetBrains 风格的**简单搜索**面板。它同时搜索**文件名**与**每个文件的内容**，提供「全部 / 文件 / 文本」三个标签页。`↑`/`↓` 切换结果，`Enter` 在侧栏卡片编辑器中打开选中项（文本命中会定位到对应行），`Esc` 关闭。打开面板时会选中上一次的查询，直接输入或粘贴即可替换。
