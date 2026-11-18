@@ -31,9 +31,13 @@ selects the previous query, so typing or pasting replaces it.
 - Case-sensitive (`Aa`) and regular-expression (`.*`) toggles.
 - Results group per file with the matched text highlighted; the footer shows the
   workspace root, hit/file counts, engine, and elapsed time.
-- The panel is a fixed dark (Darcula-like) surface — `#1e1f22` panel, `#232528`
-  group headers, `#2e436e` selection — independent of the page theme, with
-  `color-scheme: dark` so the caret, selection and scrollbars follow.
+- Appearance is a three-way choice — **Light / Dark / Follow DSH** — on the
+  bundle's page in **Plugins → Simple Search** → *Appearance*; the choice is
+  kept in browser `localStorage` (`dsh-simple-search:appearance`). *Follow DSH*
+  reads the DSH theme's effective palette (`body[data-ds-dark-theme]`, plus the
+  `theme/change` event) and tracks theme switches or OS flips; Light and Dark
+  pin the panel. Both palettes are CSS variables inside the panel and set the
+  matching `color-scheme`, so the caret, selection and scrollbars follow.
 - Activating a hit (click or `Enter`) opens the file **and closes the panel**.
   `Enter` opens the file at the exact line through `ctx.betterSidebar.openFile`
   when that plugin is installed; other deployments copy `path:line`, show a
@@ -45,9 +49,10 @@ selects the previous query, so typing or pasting replaces it.
 |---|---|
 | `index.js` | Host half: loopback routes `/dsh-simple-search/version` and `/dsh-simple-search/search` (`mode=text|files|all`), workspace/session root resolution, browser-trust fence. |
 | `search.js` | Testable search core: ripgrep argv + parsing, fallback walk, skip list, matcher compilation, file listing and name ranking. |
-| `client.js` | Browser half: `shell.overlay` entry, double-Shift listener, dialog, debounced requests, opening hits. |
+| `client.js` | Browser half: `shell.overlay` entry, double-Shift listener, dialog, debounced requests, opening hits; the `plugins.bundle.config` entry renders the appearance card on the plugin's page. |
 | `tests/search.test.mjs` | `node --test` coverage for the search core. |
 | `tests/route.test.mjs` | `node --test` coverage for the fence, root resolution and response envelope. |
+| `tests/client.test.mjs` | `node --test` coverage for the appearance preference, its three-way card, Follow DSH and panel palette resolution (VM plus fake React, no browser). |
 
 The routes are read-only and refuse any root outside a registered workspace or
 the calling Session's working directory. They sit behind the same browser-trust
@@ -61,7 +66,7 @@ The plugin is installed into a DSH `web` profile as the `dsh-simple-search`
 bundle; the profile links this directory, which stays the source of truth.
 
 ```sh
-node --test tests/search.test.mjs tests/route.test.mjs
+node --test tests/search.test.mjs tests/route.test.mjs tests/client.test.mjs
 node --check index.js && node --check search.js && node --check client.js
 ```
 
@@ -82,4 +87,7 @@ curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-searc
 ```
 
 Manual check: refresh the page, press Shift twice, type `RPC HTTP GET`, and
-press Enter on the first hit.
+press Enter on the first hit. Then open **Plugins → Simple Search**, switch the
+*Appearance* card through Light / Dark / Follow DSH, and reopen the panel to
+confirm each palette; while *Follow DSH* is active, switching the DSH theme
+must update the panel immediately.

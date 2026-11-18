@@ -1,6 +1,6 @@
 {
   "name": "dsh-simple-search",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Simple Search: JetBrains-style double-Shift search over file names and the text of every file in the workspace.",
   "license": "MIT",

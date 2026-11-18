@@ -27,6 +27,11 @@ window.__ModuleLoader__.load({
     const DEBOUNCE_MS = 170
     /** Results requested per query (the host caps it at 400). */
     const RESULT_LIMIT = 300
+    /** Browser-local preference key for the panel's appearance. */
+    const APPEARANCE_KEY = 'dsh-simple-search:appearance'
+    /** `follow` tracks the DSH theme; `light`/`dark` pin one palette. */
+    const APPEARANCE_OPTIONS = ['light', 'dark', 'follow']
+    const APPEARANCE_DEFAULT = 'follow'
 
     const ZH = {
       'meta.title': '简单搜索',
@@ -64,6 +69,13 @@ window.__ModuleLoader__.load({
       'footer.filesOnly': '{files} 个文件',
       'footer.textOnly': '{matches} 处匹配 · {textFiles} 个文件',
       'footer.all': '{files} 个文件 · {matches} 处匹配',
+      'appearance.title': '外观',
+      'appearance.description': '搜索面板的配色方案。',
+      'appearance.light': '浅色',
+      'appearance.dark': '深色',
+      'appearance.follow': '跟随 DSH',
+      'appearance.effective': '当前 DSH 主题：{scheme}',
+      'appearance.hint': '「跟随 DSH」会随 DSH 的浅色/深色主题自动切换；选择保存在本机浏览器中。',
     }
 
     const EN = {
@@ -102,82 +114,241 @@ window.__ModuleLoader__.load({
       'footer.filesOnly': '{files} files',
       'footer.textOnly': '{matches} matches · {textFiles} files',
       'footer.all': '{files} files · {matches} matches',
+      'appearance.title': 'Appearance',
+      'appearance.description': 'Color scheme of the search panel.',
+      'appearance.light': 'Light',
+      'appearance.dark': 'Dark',
+      'appearance.follow': 'Follow DSH',
+      'appearance.effective': 'DSH theme now: {scheme}',
+      'appearance.hint': '“Follow DSH” tracks the DSH light/dark theme automatically; the choice is saved in this browser.',
     }
 
     const CSS = `
-.gs-layer{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-start;justify-content:center;pointer-events:auto;color-scheme:dark}
-.gs-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.46)}
+.gs-layer{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-start;justify-content:center;pointer-events:auto}
+.gs-layer[data-gs-scheme="dark"]{color-scheme:dark;
+  --gs-backdrop:rgba(0,0,0,.46);
+  --gs-panel-bg:#1e1f22;--gs-panel-fg:#dfe1e5;--gs-panel-border:#3a3d42;--gs-panel-shadow:0 20px 56px rgba(0,0,0,.55);
+  --gs-divider:#34363b;--gs-icon:#8b9098;
+  --gs-input-fg:#e8eaed;--gs-caret:#6ea8fe;--gs-placeholder:#7d828a;
+  --gs-toggle-fg:#9aa0a8;--gs-toggle-hover-bg:#2b2d30;--gs-toggle-hover-fg:#c9cdd4;
+  --gs-toggle-active-fg:#8fb8ff;--gs-toggle-active-border:#3f4d66;--gs-toggle-active-bg:#26303f;
+  --gs-focus:#6ea8fe;--gs-kbd-fg:#8b9098;--gs-kbd-border:#3a3d42;--gs-scrollbar:#3a3d42;
+  --gs-muted:#8b9098;--gs-idle-title:#dfe1e5;--gs-hint:#7d828a;--gs-error:#ff7b72;
+  --gs-group-head-bg:#232528;--gs-group-head-border:#303237;--gs-group-name:#e8eaed;
+  --gs-row-fg:#c9cdd4;--gs-row-active-bg:#2e436e;--gs-row-active-fg:#ffffff;
+  --gs-line-fg:#6f747c;--gs-line-active-fg:#c3d3f0;
+  --gs-mark-bg:rgba(255,199,88,.30);--gs-mark-active-bg:rgba(255,214,102,.42);
+  --gs-note-fg:#e3b341;--gs-section-fg:#6f747c;
+  --gs-tab-fg:#8b9098;--gs-tab-hover-fg:#c9cdd4;--gs-tab-active-fg:#e8eaed;--gs-accent:#6ea8fe;
+  --gs-key-fg:#9aa0a8;
+  --gs-notice-bg:#2b2d30;--gs-notice-border:#43464c;--gs-notice-fg:#e8eaed;--gs-notice-shadow:0 8px 24px rgba(0,0,0,.45)}
+.gs-layer[data-gs-scheme="light"]{color-scheme:light;
+  --gs-backdrop:rgba(15,23,42,.28);
+  --gs-panel-bg:#ffffff;--gs-panel-fg:#1f2329;--gs-panel-border:#d5d8de;--gs-panel-shadow:0 20px 56px rgba(15,23,42,.20);
+  --gs-divider:#e6e8eb;--gs-icon:#6b7280;
+  --gs-input-fg:#111827;--gs-caret:#2563eb;--gs-placeholder:#9aa1ab;
+  --gs-toggle-fg:#5f6672;--gs-toggle-hover-bg:#f1f3f5;--gs-toggle-hover-fg:#1f2329;
+  --gs-toggle-active-fg:#2563eb;--gs-toggle-active-border:#bcd0f7;--gs-toggle-active-bg:#eaf0fe;
+  --gs-focus:#2563eb;--gs-kbd-fg:#6b7280;--gs-kbd-border:#d5d8de;--gs-scrollbar:#cfd4da;
+  --gs-muted:#6b7280;--gs-idle-title:#1f2329;--gs-hint:#6b7280;--gs-error:#d1242f;
+  --gs-group-head-bg:#f7f8fa;--gs-group-head-border:#eceef1;--gs-group-name:#1f2329;
+  --gs-row-fg:#3d434d;--gs-row-active-bg:#dbe7ff;--gs-row-active-fg:#111827;
+  --gs-line-fg:#9aa1ab;--gs-line-active-fg:#4b5b78;
+  --gs-mark-bg:rgba(245,180,0,.28);--gs-mark-active-bg:rgba(245,180,0,.46);
+  --gs-note-fg:#9a6700;--gs-section-fg:#9aa1ab;
+  --gs-tab-fg:#6b7280;--gs-tab-hover-fg:#1f2329;--gs-tab-active-fg:#1f2329;--gs-accent:#2563eb;
+  --gs-key-fg:#5f6672;
+  --gs-notice-bg:#ffffff;--gs-notice-border:#d5d8de;--gs-notice-fg:#1f2329;--gs-notice-shadow:0 8px 24px rgba(15,23,42,.18)}
+.gs-backdrop{position:absolute;inset:0;background:var(--gs-backdrop)}
 .gs-panel{position:relative;margin-top:8vh;width:min(880px,92vw);max-height:74vh;display:flex;flex-direction:column;
-  background:#1e1f22;color:#dfe1e5;border:1px solid #3a3d42;border-radius:12px;overflow:hidden;
-  box-shadow:0 20px 56px rgba(0,0,0,.55);font-size:13px;color-scheme:dark}
-.gs-searchrow{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #34363b}
-.gs-searchicon{flex:none;display:flex;color:#8b9098}
-.gs-input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:#e8eaed;caret-color:#6ea8fe;
+  background:var(--gs-panel-bg);color:var(--gs-panel-fg);border:1px solid var(--gs-panel-border);border-radius:12px;overflow:hidden;
+  box-shadow:var(--gs-panel-shadow);font-size:13px}
+.gs-searchrow{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--gs-divider)}
+.gs-searchicon{flex:none;display:flex;color:var(--gs-icon)}
+.gs-input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--gs-input-fg);caret-color:var(--gs-caret);
   font-size:15px;line-height:22px;padding:4px 0;font-family:inherit}
-.gs-input::placeholder{color:#7d828a}
+.gs-input::placeholder{color:var(--gs-placeholder)}
 .gs-toggle{flex:none;min-width:28px;height:26px;padding:0 6px;border:1px solid transparent;border-radius:6px;
-  background:transparent;color:#9aa0a8;font-size:11.5px;cursor:pointer;font-family:inherit}
-.gs-toggle:hover{background:#2b2d30;color:#c9cdd4}
-.gs-toggle[data-active="true"]{color:#8fb8ff;border-color:#3f4d66;background:#26303f}
-.gs-toggle:focus-visible{outline:2px solid #6ea8fe;outline-offset:1px}
-.gs-closekbd{flex:none;color:#8b9098;font-size:11px;border:1px solid #3a3d42;border-radius:4px;padding:1px 5px;margin-left:2px}
-.gs-body{flex:1;min-height:120px;overflow:auto;overscroll-behavior:contain;scrollbar-color:#3a3d42 transparent}
+  background:transparent;color:var(--gs-toggle-fg);font-size:11.5px;cursor:pointer;font-family:inherit}
+.gs-toggle:hover{background:var(--gs-toggle-hover-bg);color:var(--gs-toggle-hover-fg)}
+.gs-toggle[data-active="true"]{color:var(--gs-toggle-active-fg);border-color:var(--gs-toggle-active-border);background:var(--gs-toggle-active-bg)}
+.gs-toggle:focus-visible{outline:2px solid var(--gs-focus);outline-offset:1px}
+.gs-closekbd{flex:none;color:var(--gs-kbd-fg);font-size:11px;border:1px solid var(--gs-kbd-border);border-radius:4px;padding:1px 5px;margin-left:2px}
+.gs-body{flex:1;min-height:120px;overflow:auto;overscroll-behavior:contain;scrollbar-color:var(--gs-scrollbar) transparent}
 .gs-body::-webkit-scrollbar{width:10px;height:10px}
-.gs-body::-webkit-scrollbar-thumb{background:#3a3d42;border-radius:6px}
+.gs-body::-webkit-scrollbar-thumb{background:var(--gs-scrollbar);border-radius:6px}
 .gs-body::-webkit-scrollbar-track{background:transparent}
 .gs-idle,.gs-empty,.gs-error{display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;
-  padding:36px 24px;text-align:center;color:#8b9098}
-.gs-idle-title{font-size:13.5px;color:#dfe1e5}
-.gs-idle-hint,.gs-empty-hint{font-size:12px;color:#7d828a}
-.gs-error{color:#ff7b72;word-break:break-word}
+  padding:36px 24px;text-align:center;color:var(--gs-muted)}
+.gs-idle-title{font-size:13.5px;color:var(--gs-idle-title)}
+.gs-idle-hint,.gs-empty-hint{font-size:12px;color:var(--gs-hint)}
+.gs-error{color:var(--gs-error);word-break:break-word}
 .gs-group{display:block}
 .gs-group-head{position:sticky;top:0;z-index:1;display:flex;align-items:baseline;gap:8px;padding:5px 12px;
-  background:#232528;border-bottom:1px solid #303237}
-.gs-group-name{font-size:12px;font-weight:600;color:#e8eaed;flex:none;max-width:45%;
+  background:var(--gs-group-head-bg);border-bottom:1px solid var(--gs-group-head-border)}
+.gs-group-name{font-size:12px;font-weight:600;color:var(--gs-group-name);flex:none;max-width:45%;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gs-group-dir{font-size:11.5px;color:#8b9098;flex:1;min-width:0;overflow:hidden;
+.gs-group-dir{font-size:11.5px;color:var(--gs-muted);flex:1;min-width:0;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
-.gs-group-count{flex:none;font-size:11px;color:#8b9098}
+.gs-group-count{flex:none;font-size:11px;color:var(--gs-muted)}
 .gs-hit{display:flex;gap:10px;width:100%;padding:3px 12px;border:0;background:transparent;cursor:pointer;
-  text-align:left;color:#c9cdd4;font-family:var(--dsw-font-family-mono,ui-monospace,SFMono-Regular,Menlo,monospace);
+  text-align:left;color:var(--gs-row-fg);font-family:var(--dsw-font-family-mono,ui-monospace,SFMono-Regular,Menlo,monospace);
   font-size:12.5px;line-height:19px}
-.gs-hit[data-active="true"]{background:#2e436e;color:#ffffff}
-.gs-hit:focus-visible{outline:2px solid #6ea8fe;outline-offset:-2px}
-.gs-line{flex:none;width:52px;text-align:right;color:#6f747c;font-variant-numeric:tabular-nums;user-select:none}
-.gs-hit[data-active="true"] .gs-line{color:#c3d3f0}
+.gs-hit[data-active="true"]{background:var(--gs-row-active-bg);color:var(--gs-row-active-fg)}
+.gs-hit:focus-visible{outline:2px solid var(--gs-focus);outline-offset:-2px}
+.gs-line{flex:none;width:52px;text-align:right;color:var(--gs-line-fg);font-variant-numeric:tabular-nums;user-select:none}
+.gs-hit[data-active="true"] .gs-line{color:var(--gs-line-active-fg)}
 .gs-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre}
-.gs-mark{background:rgba(255,199,88,.30);color:inherit;border-radius:2px}
-.gs-hit[data-active="true"] .gs-mark{background:rgba(255,214,102,.42)}
-.gs-empty-note{padding:10px 12px;font-size:11.5px;color:#e3b341;border-top:1px solid #34363b}
-.gs-tabs{display:flex;gap:2px;padding:0 8px;border-bottom:1px solid #34363b}
-.gs-tab{border:0;border-bottom:2px solid transparent;background:transparent;color:#8b9098;font-size:11.5px;
+.gs-mark{background:var(--gs-mark-bg);color:inherit;border-radius:2px}
+.gs-hit[data-active="true"] .gs-mark{background:var(--gs-mark-active-bg)}
+.gs-empty-note{padding:10px 12px;font-size:11.5px;color:var(--gs-note-fg);border-top:1px solid var(--gs-divider)}
+.gs-tabs{display:flex;gap:2px;padding:0 8px;border-bottom:1px solid var(--gs-divider)}
+.gs-tab{border:0;border-bottom:2px solid transparent;background:transparent;color:var(--gs-tab-fg);font-size:11.5px;
   padding:6px 10px 5px;cursor:pointer;font-family:inherit}
-.gs-tab:hover{color:#c9cdd4}
-.gs-tab[data-active="true"]{color:#e8eaed;border-bottom-color:#6ea8fe}
-.gs-tab:focus-visible{outline:2px solid #6ea8fe;outline-offset:-2px}
-.gs-section{padding:7px 12px 3px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:#6f747c}
+.gs-tab:hover{color:var(--gs-tab-hover-fg)}
+.gs-tab[data-active="true"]{color:var(--gs-tab-active-fg);border-bottom-color:var(--gs-accent)}
+.gs-tab:focus-visible{outline:2px solid var(--gs-focus);outline-offset:-2px}
+.gs-section{padding:7px 12px 3px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--gs-section-fg)}
 .gs-file{display:flex;gap:8px;align-items:baseline;width:100%;padding:4px 12px;border:0;background:transparent;
-  cursor:pointer;text-align:left;color:#c9cdd4;font-size:12.5px}
-.gs-file[data-active="true"]{background:#2e436e;color:#ffffff}
-.gs-file:focus-visible{outline:2px solid #6ea8fe;outline-offset:-2px}
-.gs-file-icon{flex:none;display:flex;align-self:center;color:#8b9098}
+  cursor:pointer;text-align:left;color:var(--gs-row-fg);font-size:12.5px}
+.gs-file[data-active="true"]{background:var(--gs-row-active-bg);color:var(--gs-row-active-fg)}
+.gs-file:focus-visible{outline:2px solid var(--gs-focus);outline-offset:-2px}
+.gs-file-icon{flex:none;display:flex;align-self:center;color:var(--gs-icon)}
 .gs-file-name{flex:none;max-width:56%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .gs-file-dir{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left;
-  color:#8b9098;font-size:11.5px}
-.gs-file[data-active="true"] .gs-file-dir{color:#c3d3f0}
-.gs-footer{display:flex;align-items:center;gap:12px;padding:6px 12px;border-top:1px solid #34363b;
-  color:#8b9098;font-size:11.5px}
+  color:var(--gs-muted);font-size:11.5px}
+.gs-file[data-active="true"] .gs-file-dir{color:var(--gs-line-active-fg)}
+.gs-footer{display:flex;align-items:center;gap:12px;padding:6px 12px;border-top:1px solid var(--gs-divider);
+  color:var(--gs-muted);font-size:11.5px}
 .gs-hints{display:flex;gap:10px;align-items:center;flex:none}
 .gs-hint{display:inline-flex;gap:4px;align-items:center}
-.gs-key{border:1px solid #3a3d42;border-radius:4px;padding:0 4px;font-size:10.5px;color:#9aa0a8}
+.gs-key{border:1px solid var(--gs-kbd-border);border-radius:4px;padding:0 4px;font-size:10.5px;color:var(--gs-key-fg)}
 .gs-spacer{flex:1}
 .gs-root{max-width:46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
 .gs-stat{flex:none;font-variant-numeric:tabular-nums}
 .gs-notice{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);max-width:80%;padding:6px 12px;
-  border-radius:8px;background:#2b2d30;border:1px solid #43464c;color:#e8eaed;font-size:12px;
-  box-shadow:0 8px 24px rgba(0,0,0,.45)}
-.gs-busy{flex:none;font-size:11px;color:#8b9098}
+  border-radius:8px;background:var(--gs-notice-bg);border:1px solid var(--gs-notice-border);color:var(--gs-notice-fg);font-size:12px;
+  box-shadow:var(--gs-notice-shadow)}
+.gs-busy{flex:none;font-size:11px;color:var(--gs-muted)}
+
 `
+
+    /**
+     * Styles of the appearance card on the bundle's Plugin Manager page. Host
+     * tokens keep it native in either DSH theme instead of hard-coding colors.
+     */
+    const SETTINGS_CSS = `
+.ss-appearance{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border:1px solid var(--dsw-alias-border-l2);
+  border-radius:12px;background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-primary);font-size:13px}
+.ss-appearance-title{font-weight:600;font-size:13.5px}
+.ss-appearance-desc{margin:0;font-size:12.5px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.ss-appearance-options{display:inline-flex;flex-wrap:wrap;gap:2px;padding:2px;align-self:flex-start;max-width:100%;
+  border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-module-platform)}
+.ss-appearance-option{appearance:none;border:1px solid transparent;border-radius:6px;background:transparent;
+  color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:20px;padding:2px 12px;cursor:pointer}
+.ss-appearance-option:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.ss-appearance-option[data-active="true"]{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 14%,transparent);
+  border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 40%,transparent);color:var(--dsw-alias-state-business-primary)}
+.ss-appearance-option:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}
+.ss-appearance-status,.ss-appearance-hint{margin:0;font-size:11.5px;line-height:17px;color:var(--dsw-alias-label-tertiary)}
+`
+
+    /**
+     * Read the stored appearance preference, falling back to `follow`.
+     * @returns {string} one of APPEARANCE_OPTIONS.
+     */
+    function readAppearancePreference() {
+      try {
+        const stored = window.localStorage.getItem(APPEARANCE_KEY)
+        if (APPEARANCE_OPTIONS.includes(stored)) return stored
+      } catch {
+        // Blocked storage must not break the panel; the default still works.
+      }
+      return APPEARANCE_DEFAULT
+    }
+
+    /**
+     * Effective DSH color scheme from the attribute the theme runtime toggles
+     * on `body` (`body[data-ds-dark-theme]`).
+     * @returns {'light'|'dark'} the current scheme.
+     */
+    function readDshScheme() {
+      try {
+        if (document.body?.hasAttribute?.('data-ds-dark-theme') === true) return 'dark'
+      } catch {
+        // No document body (unusual embedding): light is the safer default.
+      }
+      return 'light'
+    }
+
+    /**
+     * Freeze the preference and the scheme it resolves to.
+     * @param {string} preference - stored preference.
+     * @param {'light'|'dark'} dshScheme - current DSH scheme.
+     * @returns {{preference: string, dshScheme: 'light'|'dark', scheme: 'light'|'dark'}} snapshot.
+     */
+    function appearanceSnapshot(preference, dshScheme) {
+      return { preference, dshScheme, scheme: preference === 'follow' ? dshScheme : preference }
+    }
+
+    /**
+     * Appearance preference shared by the search panel and the bundle's
+     * settings card, so a change on either side repaints the other.
+     * @returns {object} snapshot source plus preference and theme mutators.
+     */
+    function createAppearance() {
+      let preference = readAppearancePreference()
+      let dshScheme = readDshScheme()
+      let snapshot = appearanceSnapshot(preference, dshScheme)
+      const listeners = new Set()
+      /** Republish only when the resolved appearance actually moved. */
+      const publish = () => {
+        const next = appearanceSnapshot(preference, dshScheme)
+        if (next.preference === snapshot.preference && next.scheme === snapshot.scheme) return
+        snapshot = next
+        for (const listener of [...listeners]) listener()
+      }
+      return {
+        getSnapshot: () => snapshot,
+        subscribe(listener) {
+          listeners.add(listener)
+          return () => { listeners.delete(listener) }
+        },
+        /** Store one preference; every subscriber repaints. */
+        setPreference(value) {
+          if (!APPEARANCE_OPTIONS.includes(value) || value === preference) return
+          preference = value
+          try {
+            window.localStorage.setItem(APPEARANCE_KEY, value)
+          } catch {
+            // Keep the choice in memory when storage is unavailable.
+          }
+          publish()
+        },
+        /** Track the DSH theme; a repeat scheme changes nothing. */
+        setDshScheme(value) {
+          if (value !== 'light' && value !== 'dark') return
+          if (value === dshScheme) return
+          dshScheme = value
+          publish()
+        },
+      }
+    }
+
+    const appearance = createAppearance()
+
+    /**
+     * Subscribe a component to the appearance preference.
+     * @returns {{preference: string, dshScheme: 'light'|'dark', scheme: 'light'|'dark'}} current snapshot.
+     */
+    function useAppearance() {
+      const [snapshot, setSnapshot] = useState(() => appearance.getSnapshot())
+      useEffect(() => {
+        setSnapshot(appearance.getSnapshot())
+        return appearance.subscribe(() => { setSnapshot(appearance.getSnapshot()) })
+      }, [])
+      return snapshot
+    }
 
     /**
      * Resolve a route against the page's base so a reverse-proxied or desktop
@@ -280,6 +451,37 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Appearance card rendered on the bundle's page in Plugin Manager
+     * (`plugins.bundle.config`, keyed by the bundle package name). The three
+     * choices write the same browser-local preference the panel reads.
+     * @param {object} props - slot props; `t` is bound by the registration.
+     * @returns {object} React element.
+     */
+    function AppearanceSettings(props) {
+      const t = typeof props.t === 'function' ? props.t : (key) => key
+      const state = useAppearance()
+      const schemeLabel = t(state.dshScheme === 'dark' ? 'appearance.dark' : 'appearance.light')
+      return h(React.Fragment, null,
+        h('style', { key: 'appearance-styles' }, SETTINGS_CSS),
+        h('section', { className: 'ss-appearance', key: 'appearance' },
+          h('span', { className: 'ss-appearance-title' }, t('appearance.title')),
+          h('p', { className: 'ss-appearance-desc' }, t('appearance.description')),
+          h('div', { className: 'ss-appearance-options', role: 'group', 'aria-label': t('appearance.title') },
+            ...APPEARANCE_OPTIONS.map((value) => h('button', {
+              key: value,
+              type: 'button',
+              className: 'ss-appearance-option',
+              'aria-pressed': state.preference === value,
+              'data-active': state.preference === value ? 'true' : undefined,
+              onClick: () => { appearance.setPreference(value) },
+            }, t(`appearance.${value}`)))),
+          state.preference === 'follow'
+            ? h('p', { className: 'ss-appearance-status' }, t('appearance.effective', { scheme: schemeLabel }))
+            : null,
+          h('p', { className: 'ss-appearance-hint' }, t('appearance.hint'))))
+    }
+
+    /**
      * Build the overlay component for one client context.
      * @param {object} ctx - client cordis context.
      * @returns {Function} React component.
@@ -317,6 +519,7 @@ window.__ModuleLoader__.load({
 
       return function GlobalSearchOverlay(props) {
         const t = typeof props.t === 'function' ? props.t : (key) => key
+        const appearanceState = useAppearance()
         const [open, setOpen] = useState(false)
         const [query, setQuery] = useState('')
         const [mode, setMode] = useState('all')
@@ -679,7 +882,7 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'gs-text' }, highlight(hit.text, query, caseSensitive, regex)))))))
         }
 
-        return h('div', { className: 'gs-layer' },
+        return h('div', { className: 'gs-layer', 'data-gs-scheme': appearanceState.scheme },
           h('style', null, CSS),
           h('div', { className: 'gs-backdrop', onMouseDown: () => close() }),
           h('div', {
@@ -798,6 +1001,46 @@ window.__ModuleLoader__.load({
           order: 60,
           locale: NS,
         }, createOverlay(ctx))), 'dsh-simple-search: overlay')
+        // `follow` resolves to the DSH theme's effective scheme. The theme
+        // event covers preference switches and OS flips; the body attribute
+        // keeps it current in deployments without the theme service.
+        ctx.effect(() => {
+          const theme = ctx.get('theme')
+          const read = () => {
+            try {
+              const scheme = theme?.getTheme?.()?.active?.colorScheme
+              if (scheme === 'light' || scheme === 'dark') return scheme
+            } catch {
+              // A theme service that throws must not break the panel.
+            }
+            return readDshScheme()
+          }
+          appearance.setDshScheme(read())
+          const off = typeof ctx.on === 'function'
+            ? ctx.on('theme/change', (snapshot) => {
+              // The emitted snapshot is authoritative; read again only when it
+              // carries no usable scheme.
+              const scheme = snapshot?.active?.colorScheme
+              appearance.setDshScheme(scheme === 'light' || scheme === 'dark' ? scheme : read())
+            })
+            : undefined
+          let observer
+          if (typeof MutationObserver === 'function' && document.body !== null && document.body !== undefined) {
+            observer = new MutationObserver(() => { appearance.setDshScheme(read()) })
+            observer.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] })
+          }
+          return () => {
+            if (typeof off === 'function') off()
+            if (observer !== undefined) observer.disconnect()
+          }
+        }, 'dsh-simple-search: DSH theme sync')
+        // The bundle's page in Plugin Manager carries the three-way appearance
+        // choice; the key is the bundle package name the page looks up.
+        ctx.effect(() => ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+          name: 'plugins.bundle.config',
+          key: 'dsh-simple-search',
+          locale: NS,
+        }, AppearanceSettings)), 'dsh-simple-search: appearance settings')
       },
     }
   },

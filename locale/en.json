@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Simple Search",
-    "description": "Press Shift twice to search the contents of every file in the workspace, and open a hit in the side card editor."
+    "description": "Press Shift twice to search the contents of every file in the workspace, and open a hit in the side card editor. Choose Light, Dark, or Follow DSH on the plugin's page."
   }
 }
