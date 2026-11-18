@@ -1,0 +1,3 @@
+- insert:
+    - id: simple-search
+      name: 'dsh-simple-search'
