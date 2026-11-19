@@ -20,13 +20,15 @@
  */
 
 import fsp from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import nodePath from 'node:path'
 import { SearchError, isWithin, searchWorkspace } from './search.js'
 
 /** Plugin identity for diagnostics. */
 export const name = 'dsh-simple-search'
-/** This file's capability version; bump when the host half changes. */
-const VERSION = '1.0.1'
+const require = createRequire(import.meta.url)
+/** Version reported by the self-check; `package.json` is the only source. */
+const VERSION = require('./package.json').version
 const ROUTE_VERSION = '/dsh-simple-search/version'
 const ROUTE_SEARCH = '/dsh-simple-search/search'
 /** Refusal when the deployment cannot authenticate the caller at all. */

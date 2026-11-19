@@ -36,11 +36,11 @@
 插件以 `dsh-simple-search` bundle 形式安装到 DSH 的 `web` profile；profile 链接本目录，本目录始终是源码。
 
 ```sh
-node --test tests/search.test.mjs tests/route.test.mjs tests/client.test.mjs
-node --check index.js && node --check search.js && node --check client.js
+npm run check
 ```
 
-修改 `client.js` 后刷新页面，新的客户端模块会替换已加载的旧模块。宿主半改动（`index.js`、`search.js`）不会对 link 安装的包重新求值（Node 按真实路径缓存模块，HMR 只清理 profile 根下的模块）：需要换一个目录名重新 remove + install，或重启宿主。
+`npm run check` 会跑语法检查、全部 `node:test`、6 个认证栅栏场景和
+`npm pack --dry-run`；CI 使用同一条命令。修改 `client.js` 后刷新页面，新的客户端模块会替换已加载的旧模块。宿主半改动（`index.js`、`search.js`）不会对 link 安装的包重新求值（Node 按真实路径缓存模块，HMR 只清理 profile 根下的模块）：需要换一个目录名重新 remove + install，或重启宿主。
 
 ## 验证
 
@@ -49,7 +49,7 @@ node --check index.js && node --check search.js && node --check client.js
 curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-search/version'
 
 # 可复跑的认证栅栏检查：真实 HTTP、一次性回环服务器、假宿主服务
-node scripts/verify-auth-fence.mjs   # 期望 6/6，退出码 0
+npm run check:auth   # 期望 6/6，退出码 0
 
 # 客户端实时注册
 #   cordis_inspect_query Slots.listSubTree root=shell.overlay  → occupant "simple-search"
@@ -58,3 +58,7 @@ node scripts/verify-auth-fence.mjs   # 期望 6/6，退出码 0
 `scripts/verify-auth-fence.mjs` 挂载真实 handler，覆盖正常 `dsh web` 到不了的分支：完全没有 `connection` 服务（`503 auth-unavailable`）、服务为 `null`、校验抛错（`403`）、会话被接纳（`200`）、未登录（`401`）与跨站请求（`403`）。不需要运行中的宿主，也不需要 cookie。
 
 手动验收：刷新页面，双击 Shift，输入 `RPC HTTP GET`，在第一个结果上按 Enter；随后打开「插件 → 简单搜索」，在「外观」卡片中依次切换浅色 / 深色 / 跟随 DSH，再双击 Shift 确认面板配色与选项一致，DSH 切换主题时「跟随 DSH」应立即跟上。
+
+## 开发
+
+面向 agent 的规则、命令和模块地图从 [AGENTS.md](AGENTS.md) 开始。架构、安全、重载矩阵与决策记录在 [docs/](docs/)；可复用流程在 `.agents/skills/`，并通过 `.claude/skills` 与 Claude Code 共享。

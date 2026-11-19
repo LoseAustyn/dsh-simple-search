@@ -89,6 +89,13 @@ describe('simple-search routes', () => {
     assert.ok(body.value.capabilities.includes('search'))
   })
 
+  it('reports the package version', async () => {
+    const manifest = JSON.parse(await fsp.readFile(new URL('../package.json', import.meta.url), 'utf8'))
+    const { status, body } = await call(routes.get('/dsh-simple-search/version'), '/dsh-simple-search/version')
+    assert.equal(status, 200)
+    assert.equal(body.value.version, manifest.version)
+  })
+
   it('searches the most recently updated workspace and reports the root', async () => {
     const { status, body } = await call(
       routes.get('/dsh-simple-search/search'),

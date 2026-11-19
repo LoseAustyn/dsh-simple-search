@@ -70,10 +70,11 @@ The plugin is installed into a DSH `web` profile as the `dsh-simple-search`
 bundle; the profile links this directory, which stays the source of truth.
 
 ```sh
-node --test tests/search.test.mjs tests/route.test.mjs tests/client.test.mjs
-node --check index.js && node --check search.js && node --check client.js
+npm run check
 ```
 
+`npm run check` runs the syntax checks, all `node:test` files, the six
+auth-fence scenarios, and `npm pack --dry-run`; CI runs the same command.
 After changing `client.js`, refresh the page so the new client module replaces
 the loaded one. Host-half changes (`index.js`, `search.js`) are not re-evaluated
 for a linked package (Node caches the module by its real path and HMR only
@@ -87,7 +88,7 @@ path changed, or restart the host.
 curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-search/version'
 
 # reproducible auth-fence check: real HTTP, throwaway loopback server, fake host services
-node scripts/verify-auth-fence.mjs   # expects 6/6 and exit 0
+npm run check:auth   # expects 6/6 and exit 0
 
 # the live client registration
 #   cordis_inspect_query Slots.listSubTree root=shell.overlay  → occupant "simple-search"
@@ -104,3 +105,10 @@ press Enter on the first hit. Then open **Plugins → Simple Search**, switch th
 *Appearance* card through Light / Dark / Follow DSH, and reopen the panel to
 confirm each palette; while *Follow DSH* is active, switching the DSH theme
 must update the panel immediately.
+
+## Development
+
+Agent-facing rules, commands, and the module map start at [AGENTS.md](AGENTS.md).
+Architecture, security, the reload matrix, and decision records live under
+[docs/](docs/); reusable workflows are in `.agents/skills/` and shared with
+Claude Code through `.claude/skills`.
