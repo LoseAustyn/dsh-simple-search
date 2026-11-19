@@ -29,7 +29,7 @@
 | `tests/route.test.mjs` | 信任栅栏、根目录解析与响应封装的 `node --test` 覆盖。 |
 | `tests/client.test.mjs` | 外观偏好、三选项卡片、跟随 DSH 与面板色板解析的 `node --test` 覆盖（VM + 假 React，无需浏览器）。 |
 
-路由只读，并拒绝已注册工作区或调用会话工作目录之外的根目录。它们与官方本地路由共用同一套浏览器信任栅栏（回环/`trustedHosts` Host、同源元数据、`connection.requestRejection`），因此真正授权请求的是页面自身的 auth cookie。
+路由只读，并拒绝已注册工作区或调用会话工作目录之外的根目录。它们与官方本地路由共用同一套浏览器信任栅栏（回环/`trustedHosts` Host、同源元数据、`connection.requestRejection`），因此真正授权请求的是页面自身的 auth cookie。栅栏**默认拒绝（fail-closed）**：宿主没有 Connection 服务、或该服务无法拒绝请求时，两条路由一律返回 `503 auth-unavailable`，不会把工作区文本交给身份无法验证的调用方。插件同时在 `inject` 中声明了 `connection`，因此在没有宿主认证的部署里根本不会挂载。
 
 ## 安装
 
@@ -48,8 +48,13 @@ node --check index.js && node --check search.js && node --check client.js
 # 路由已注册并能响应（没有页面 auth cookie 时返回 401 属正常）
 curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-search/version'
 
+# 可复跑的认证栅栏检查：真实 HTTP、一次性回环服务器、假宿主服务
+node scripts/verify-auth-fence.mjs   # 期望 6/6，退出码 0
+
 # 客户端实时注册
 #   cordis_inspect_query Slots.listSubTree root=shell.overlay  → occupant "simple-search"
 ```
+
+`scripts/verify-auth-fence.mjs` 挂载真实 handler，覆盖正常 `dsh web` 到不了的分支：完全没有 `connection` 服务（`503 auth-unavailable`）、服务为 `null`、校验抛错（`403`）、会话被接纳（`200`）、未登录（`401`）与跨站请求（`403`）。不需要运行中的宿主，也不需要 cookie。
 
 手动验收：刷新页面，双击 Shift，输入 `RPC HTTP GET`，在第一个结果上按 Enter；随后打开「插件 → 简单搜索」，在「外观」卡片中依次切换浅色 / 深色 / 跟随 DSH，再双击 Shift 确认面板配色与选项一致，DSH 切换主题时「跟随 DSH」应立即跟上。

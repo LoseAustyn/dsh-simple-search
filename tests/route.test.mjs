@@ -29,7 +29,11 @@ function fakeContext(services) {
       return callback()
     },
     get(name) {
-      return services[name]
+      if (Object.hasOwn(services, name)) return services[name]
+      // Routes are mounted only with Connection present; an authenticated
+      // default keeps the fence out of the way of the search assertions.
+      if (name === 'connection') return { requestRejection: () => undefined }
+      return undefined
     },
   }
   return { ctx, routes }
@@ -148,6 +152,51 @@ describe('simple-search routes', () => {
     } finally {
       await fsp.rm(outside, { recursive: true, force: true })
     }
+  })
+
+  it('refuses search when host authentication is unavailable', async () => {
+    const { ctx, routes: captured } = fakeContext({
+      workspaceRegistry: { list: () => [{ path: root, updatedAt: new Date().toISOString() }] },
+      connection: undefined,
+    })
+    apply(ctx)
+    const handler = captured.get('/dsh-simple-search/search')
+    const { status, body } = await call(handler, '/dsh-simple-search/search?q=needle')
+    assert.equal(status, 503)
+    assert.equal(body.ok, false)
+    assert.equal(body.error.code, 'auth-unavailable')
+    assert.equal(body.value, undefined)
+  })
+
+  it('refuses the version route too when host authentication is unavailable', async () => {
+    const { ctx, routes: captured } = fakeContext({
+      workspaceRegistry: { list: () => [{ path: root }] },
+      connection: null,
+    })
+    apply(ctx)
+    const { status } = await call(captured.get('/dsh-simple-search/version'), '/dsh-simple-search/version')
+    assert.equal(status, 503)
+  })
+
+  it('passes through the host authentication rejection', async () => {
+    const { ctx, routes: captured } = fakeContext({
+      workspaceRegistry: { list: () => [{ path: root }] },
+      connection: { requestRejection: () => 401 },
+    })
+    apply(ctx)
+    const { status, body } = await call(captured.get('/dsh-simple-search/search'), '/dsh-simple-search/search?q=needle')
+    assert.equal(status, 401)
+    assert.equal(body.error.code, 'forbidden')
+  })
+
+  it('treats a throwing authentication check as a refusal', async () => {
+    const { ctx, routes: captured } = fakeContext({
+      workspaceRegistry: { list: () => [{ path: root }] },
+      connection: { requestRejection: () => { throw new Error('auth down') } },
+    })
+    apply(ctx)
+    const { status } = await call(captured.get('/dsh-simple-search/search'), '/dsh-simple-search/search?q=needle')
+    assert.equal(status, 403)
   })
 
   it('reports an empty query as an invalid pattern', async () => {

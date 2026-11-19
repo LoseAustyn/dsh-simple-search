@@ -1,9 +1,13 @@
 {
   "name": "dsh-simple-search",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "Simple Search: JetBrains-style double-Shift search over file names and the text of every file in the workspace.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LoseAustyn/dsh-simple-search.git"
+  },
   "type": "module",
   "engines": {
     "dsh": ">=0.2.2-rc.2 <0.3.0"

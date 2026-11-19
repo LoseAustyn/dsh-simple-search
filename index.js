@@ -12,8 +12,11 @@
  * directory is refused instead of silently searching the host's own cwd.
  *
  * Every handler sits behind a browser-trust fence: loopback/`trustedHosts`
- * Host, no cross-site Origin, and `connection.requestRejection` when the
- * deployment exposes it. The route is read-only.
+ * Host, no cross-site Origin, and an authenticated browser session proven by
+ * `connection.requestRejection`. The fence fails closed: a deployment without
+ * the Connection service (or without its `requestRejection` capability) cannot
+ * prove who is calling, so the routes answer 503 and never serve workspace
+ * text. The route is read-only.
  */
 
 import fsp from 'node:fs/promises'
@@ -23,15 +26,21 @@ import { SearchError, isWithin, searchWorkspace } from './search.js'
 /** Plugin identity for diagnostics. */
 export const name = 'dsh-simple-search'
 /** This file's capability version; bump when the host half changes. */
-const VERSION = '1.0.0'
+const VERSION = '1.0.1'
 const ROUTE_VERSION = '/dsh-simple-search/version'
 const ROUTE_SEARCH = '/dsh-simple-search/search'
+/** Refusal when the deployment cannot authenticate the caller at all. */
+const AUTH_UNAVAILABLE = 503
 
 /** Session ids are opaque but bounded: `session-<uuid>` or a bare uuid. */
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/
 
-/** Services required before mounting. */
-export const inject = ['webServer']
+/**
+ * Services required before mounting. `connection` is mandatory, not optional:
+ * it is the host's only source of caller identity, so mounting without it would
+ * expose workspace file contents to unauthenticated callers.
+ */
+export const inject = ['webServer', 'connection']
 
 const ok = (res, value) => sendJson(res, 200, { ok: true, value })
 const fail = (res, status, code, message) => sendJson(res, status, { ok: false, error: { code, message } })
@@ -47,7 +56,9 @@ function sendJson(res, status, body) {
 /**
  * Browser-trust fence shared by every route (same rules as the shipped local
  * routes): loopback or an explicitly trusted authority, same-origin browser
- * metadata, and the connection service's own admission when present.
+ * metadata, and the Connection service's authentication of the caller. The
+ * fence is fail-closed: when the Connection service is absent or cannot reject
+ * requests, the route answers 503 instead of serving workspace text.
  * @param {import('node:http').IncomingMessage} req - incoming request.
  * @param {import('@deepseek-ai/cordis').Context} ctx - host context.
  * @returns {number|null} rejection status, or null when the request may pass.
@@ -79,15 +90,20 @@ function fence(req, ctx) {
       if (originUrl.host.toLowerCase() !== hostUrl.host.toLowerCase()) return 403
     }
     const connection = ctx.get('connection')
-    if (connection !== undefined && typeof connection.requestRejection === 'function') {
-      try {
-        const rejection = connection.requestRejection(req)
-        if (rejection !== undefined && rejection !== null && rejection !== false) {
-          return typeof rejection === 'number' ? rejection : 403
-        }
-      } catch {
-        return 403
+    if (connection === undefined || connection === null
+      || typeof connection.requestRejection !== 'function') {
+      // Fail closed: without the host's authentication service there is no way
+      // to distinguish the owner's browser from an unauthenticated caller, and
+      // this route hands out file contents.
+      return AUTH_UNAVAILABLE
+    }
+    try {
+      const rejection = connection.requestRejection(req)
+      if (rejection !== undefined && rejection !== null && rejection !== false) {
+        return typeof rejection === 'number' ? rejection : 403
       }
+    } catch {
+      return 403
     }
     if (String(req.method ?? 'GET').toUpperCase() !== 'GET' && !loopback(hostUrl.hostname)) return 403
     return null
@@ -241,6 +257,10 @@ export function apply(ctx) {
   const guard = (handler) => async (req, res) => {
     const rejection = fence(req, ctx)
     if (rejection !== null) {
+      if (rejection === AUTH_UNAVAILABLE) {
+        fail(res, AUTH_UNAVAILABLE, 'auth-unavailable', '宿主认证不可用，已拒绝访问')
+        return
+      }
       fail(res, rejection, 'forbidden', '请求被信任栅栏拒绝')
       return
     }

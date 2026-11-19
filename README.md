@@ -58,7 +58,11 @@ The routes are read-only and refuse any root outside a registered workspace or
 the calling Session's working directory. They sit behind the same browser-trust
 fence as the shipped local routes (loopback/`trustedHosts` Host, same-origin
 metadata, `connection.requestRejection`), so the page's own auth cookie is what
-authorizes a request.
+authorizes a request. The fence **fails closed**: when the host's Connection
+service is missing or cannot reject requests, both routes answer
+`503 auth-unavailable` rather than serve workspace text to a caller whose
+identity cannot be verified. The plugin also declares `connection` in `inject`,
+so it does not mount at all in a deployment without host authentication.
 
 ## Install
 
@@ -82,9 +86,18 @@ path changed, or restart the host.
 # route registered and answering (401 without the page's auth cookie is expected)
 curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-search/version'
 
+# reproducible auth-fence check: real HTTP, throwaway loopback server, fake host services
+node scripts/verify-auth-fence.mjs   # expects 6/6 and exit 0
+
 # the live client registration
 #   cordis_inspect_query Slots.listSubTree root=shell.overlay  → occupant "simple-search"
 ```
+
+`scripts/verify-auth-fence.mjs` mounts the real handlers and covers the branch a
+normal `dsh web` installation cannot reach: no `connection` service at all
+(`503 auth-unavailable`), a `null` service, a throwing check (`403`), an
+admitting session (`200`), a rejected one (`401`) and a cross-site request
+(`403`). It needs neither a running host nor a session cookie.
 
 Manual check: refresh the page, press Shift twice, type `RPC HTTP GET`, and
 press Enter on the first hit. Then open **Plugins → Simple Search**, switch the
