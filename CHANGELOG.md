@@ -7,6 +7,11 @@ how the project is developed.
 
 ## [Unreleased]
 
+### Removed
+
+- Claude Code compatibility shims (`CLAUDE.md`, `.claude/skills`). The
+  repository targets DSH only: `AGENTS.md` plus `.agents/skills/`.
+
 ## [1.3.0] - 2026-11-20
 
 ### Added

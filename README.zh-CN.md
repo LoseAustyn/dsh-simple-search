@@ -73,4 +73,4 @@ npm run check:auth   # 期望 6/6，退出码 0
 
 ## 开发
 
-面向 agent 的规则、命令和模块地图从 [AGENTS.md](AGENTS.md) 开始。架构、安全、重载矩阵与决策记录在 [docs/](docs/)；可复用流程在 `.agents/skills/`，并通过 `.claude/skills` 与 Claude Code 共享。
+面向 agent 的规则、命令和模块地图从 [AGENTS.md](AGENTS.md) 开始。架构、安全、重载矩阵与决策记录在 [docs/](docs/)；可复用流程在 `.agents/skills/`。

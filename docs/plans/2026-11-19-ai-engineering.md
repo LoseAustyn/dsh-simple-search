@@ -6,6 +6,7 @@
 参考：`/home/chen/Projects/deepseek-harness` 的 `AGENTS.md`、`.agents/skills/`、`.agents/notes/`、`lefthook.yml`、`.claude/skills` 软链、`docs/AGENTS.md`
 
 > 落地说明：本文件保留为提案背景；当前规范以 `AGENTS.md`、`docs/ARCHITECTURE.md`、`docs/DEVELOPMENT.md`、`docs/SECURITY.md` 与 `docs/decisions/` 为准。源码已随本次提交落地；未推送、未重装宿主，实时 `/version` 仍可能由旧宿主模块返回，重装/重启后应返回 `1.2.1`。
+> 后续变更：2026-11-20 移除了 `CLAUDE.md` 与 `.claude/skills` 两个 Claude Code 兼容软链（项目不使用 Claude 开发），指令与 skill 只保留 `AGENTS.md`、`.agents/skills/`；下文出现的 `.claude/` 结构为当时提案。
 
 ## 2. 现状审计（落地前）
 

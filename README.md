@@ -145,5 +145,4 @@ against a stale host answers with a route-not-found error.
 
 Agent-facing rules, commands, and the module map start at [AGENTS.md](AGENTS.md).
 Architecture, security, the reload matrix, and decision records live under
-[docs/](docs/); reusable workflows are in `.agents/skills/` and shared with
-Claude Code through `.claude/skills`.
+[docs/](docs/); reusable workflows are in `.agents/skills/`.
