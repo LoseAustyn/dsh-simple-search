@@ -5,13 +5,6 @@ All notable user-visible changes to `dsh-simple-search`. The format follows
 `package.json`. Agent-facing process changes are listed too when they affect
 how the project is developed.
 
-## [Unreleased]
-
-### Removed
-
-- Claude Code compatibility shims (`CLAUDE.md`, `.claude/skills`). The
-  repository targets DSH only: `AGENTS.md` plus `.agents/skills/`.
-
 ## [1.3.0] - 2026-11-20
 
 ### Added
@@ -45,8 +38,8 @@ how the project is developed.
 
 ### Added (agent-facing)
 
-- `AGENTS.md`, `tests/AGENTS.md`, and `CLAUDE.md`/`.claude/skills` links for
-  agent-facing development instructions.
+- `AGENTS.md` and `tests/AGENTS.md` for agent-facing development instructions;
+  the repository targets DSH only (no Claude Code compatibility shims).
 - `.agents/skills/` workflows for changing, verifying, and releasing the plugin.
 - `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`, `docs/SECURITY.md`, and
   `docs/decisions/` records for the current design and its security rules.
