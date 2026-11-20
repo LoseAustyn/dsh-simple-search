@@ -5,7 +5,7 @@ Date: 2026-11-19
 
 ## Context
 
-插件是 DSH profile 直接加载的本地 bundle，宿主半与浏览器半都是普通 ESM。引入 TypeScript、构建链、jsdom 或测试框架会增加安装步骤、构建产物和版本耦合，而当前代码规模约 3,000 行，已有 JSDoc 和 44 项行为测试。
+插件是 DSH profile 直接加载的本地 bundle，宿主半与浏览器半都是普通 ESM。引入 TypeScript、构建链、jsdom 或测试框架会增加安装步骤、构建产物和版本耦合，而当前代码规模仍在数千行以内，已有 JSDoc 与 `node:test` 行为测试覆盖。
 
 ## Decision
 

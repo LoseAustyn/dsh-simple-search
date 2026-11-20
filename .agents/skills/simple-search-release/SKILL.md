@@ -39,7 +39,7 @@ npm pack --dry-run
 检查：
 
 - 单测与认证全绿。
-- 包内容包含 `index.js`、`search.js`、`client.js`、`cordis.patch.yml`、`locale/*.json`、`icon.svg`、`README*.md`、`LICENSE`、`package.json`。
+- 包内容包含 `index.js`、`search.js`、`conversation.js`、`client.js`、`cordis.patch.yml`、`locale/*.json`、`icon.svg`、`README*.md`、`LICENSE`、`package.json`。
 - 不包含 `tests/`、`scripts/`、`docs/`、`.github/`、`*.tgz`。
 
 安装验证：

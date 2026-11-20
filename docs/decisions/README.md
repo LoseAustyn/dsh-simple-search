@@ -28,5 +28,7 @@ Date: YYYY-MM-DD
 - [0001 路由认证 fail-closed](0001-fail-closed-auth.md)
 - [0002 搜索不服从 .gitignore](0002-no-ignore-vcs.md)
 - [0003 纯 JavaScript + node:test](0003-plain-js-node-test.md)
+- [0004 会话标题在浏览器匹配、会话内容由宿主读取](0004-session-and-conversation-search.md)
+- [0005 本会话命中跳转到 Chat 消息](0005-jump-to-chat-message.md)
 
 新增决定时同时更新本索引；不要把决定只写在提交信息或聊天里。

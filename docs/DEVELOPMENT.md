@@ -28,6 +28,7 @@ npm run check:syntax # 只做 node --check
 node --test tests/route.test.mjs
 node --test --test-name-pattern 'version' tests/route.test.mjs
 node --test --test-name-pattern 'appearance' tests/client.test.mjs
+node --test tests/conversation.test.mjs
 ```
 
 `npm run check` 是提交前唯一入口；CI 跑同一命令。
@@ -38,8 +39,8 @@ node --test --test-name-pattern 'appearance' tests/client.test.mjs
 
 | 改动 | 生效方式 | 验证 |
 |---|---|---|
-| `index.js` / `search.js` | Node 按真实路径缓存 ESM；`link:` 包不会热更新。`remove_bundle` 后把目录改成新名字再 `install_bundle`，或重启宿主 | `/dsh-simple-search/version` 的 `version`/`pid` 变化；`npm run check:auth` |
-| `client.js` | 刷新页面加载新模块；若 `pnpm run dev:web` 在跑，客户端 bundle 可热替换 | 双击 Shift；插件详情页外观卡 |
+| `index.js` / `search.js` / `conversation.js` | Node 按真实路径缓存 ESM；`link:` 包不会热更新。`remove_bundle` 后把目录改成新名字再 `install_bundle`，或重启宿主 | `/dsh-simple-search/version` 的 `version`/`pid` 变化；`npm run check:auth` |
+| `client.js` | 刷新页面加载新模块；若 `pnpm run dev:web` 在跑，客户端 bundle 可热替换 | 双击 Shift；三个搜索范围；插件详情页外观卡 |
 | `package.json` / `cordis.patch.yml` / `locale` / `icon.svg` | 重装 bundle + 刷新页面 | `install_bundle` 返回 applied、warnings 空；插件页标题/图标 |
 | `tests/` / `scripts/` | 无需重载 | 对应命令 |
 
@@ -64,10 +65,14 @@ curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-searc
 
 浏览器：
 
-1. 刷新页面，双击 Shift；输入查询；切换 `All` / `Files` / `Text`。
+1. 刷新页面，双击 Shift；输入查询；切换 `工作区文件` 下的 `All` / `Files` / `Text`。
 2. `↑`/`↓` 移动，`Enter` 打开命中，`Esc` 关闭。
-3. **Plugins → Simple Search** → *Appearance*：Light / Dark / Follow DSH；切换后重开面板确认。
-4. Follow DSH 下切换 DSH 主题，面板应立即跟随。
+3. 切到 `会话标题`：输入某个会话标题的一部分，结果应跨工作区列出；`Enter` 打开该会话。
+4. 切到 `本会话`：输入最近对话里的一个词，结果应只包含双方可见文字，不含思考过程、工具调用或系统提示；`Enter` 应滚动到 Chat 里的该条消息；如果把 Conversation View 切到非 Chat 或锚点不可用，应回退为复制并提示。
+5. **Plugins → Simple Search** → *Appearance*：Light / Dark / Follow DSH；切换后重开面板确认。
+6. Follow DSH 下切换 DSH 主题，面板应立即跟随。
+
+注意：`本会话` 依赖宿主新增的 `/dsh-simple-search/conversation` 路由。只刷新页面而宿主模块未重载时，该范围会报“路由不存在”一类错误；按上表重装/重启后再验收。
 
 没有浏览器控制时，以上只能写“待用户确认”，不能写成已通过。
 
@@ -79,6 +84,10 @@ curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-searc
 - **出现两个面板**：旧 slot id 或旧 bundle 残留；移除旧 bundle 后刷新。
 - **`engine=walk`**：`@vscode/ripgrep` 未解析到且 `PATH` 没有 `rg`；功能可用，结果可能更慢。可用 `DSH_SIMPLE_SEARCH_RG` 指定二进制。
 - **搜索不到子仓内容**：这是 `--no-ignore-vcs` 的有意行为；若仍缺失，检查 `SKIP_DIR_NAMES` 与目标目录名。
+- **`本会话` 提示宿主未提供会话查询服务**：profile 没有挂载 `sessionQuery`（DSH 的 base bundle 默认挂载）。确认宿主 bundle 组成后重启；插件不会退化成直接读会话文件。
+- **`本会话` 提示当前没有打开的会话**：主视图没有选中会话。先在侧栏打开一个会话；subagent 子会话页不提供该范围。
+- **会话标题搜不到某个会话**：空白占位与 subagent 子会话被有意排除；刚创建/改名的会话需要目录刷新（打开面板会触发 `sessions.refresh()`）。
+- **`本会话` 返回 504**：读取会话日志超过 8 秒；通常是超长会话或磁盘慢，重试即可，不会无界扫描。
 
 ## 发布
 

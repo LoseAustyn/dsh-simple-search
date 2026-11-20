@@ -222,3 +222,183 @@ describe('simple-search routes', () => {
     assert.equal(body.error.code, 'bad-root')
   })
 })
+
+describe('conversation route', () => {
+  /**
+   * Events covering everything the route must include or exclude.
+   * @returns {object[]} raw log events.
+   */
+  function conversationEvents() {
+    return [
+      { type: 'turn/start', seq: 0, time: 100, data: { turn: 1 } },
+      { type: 'system/message', seq: 1, time: 500, data: { message: { role: 'system', content: [{ type: 'text', text: 'system needle' }] } } },
+      { type: 'user/message', seq: 2, time: 1_000, data: { id: 'msg-route', content: [{ type: 'text', text: 'needle question' }], source: { kind: 'user' } } },
+      { type: 'assistant/message', seq: 3, time: 2_000, data: { turn: 1, step: 1, message: { id: 'asst-route', role: 'assistant', content: [{ type: 'reasoning', text: 'hidden needle' }, { type: 'text', text: 'needle answer' }] } } },
+      { type: 'tool/result', seq: 4, time: 3_000, data: { message: { role: 'tool', content: [{ type: 'text', text: 'needle tool' }] } } },
+      { type: 'session/title', seq: 5, time: 4_000, data: { title: 'Route title', messageSeqs: [2], source: { kind: 'user' } } },
+    ]
+  }
+
+  /**
+   * Mount the routes with a fake session-query service.
+   * @param {{sessionQuery?: object, connection?: unknown}} [options] - service overrides.
+   * @returns {{routes: Map<string, Function>, calls: string[], disposed: number}} context pieces.
+   */
+  function conversationContext(options = {}) {
+    const calls = []
+    let disposed = 0
+    const observation = {
+      header: { id: 'session-route', cwd: '/tmp/route' },
+      events: conversationEvents(),
+      cursor: 5,
+      [Symbol.dispose]() { disposed += 1 },
+    }
+    const sessionQuery = options.sessionQuery ?? {
+      observeSession: async (sessionId) => {
+        calls.push(sessionId)
+        return observation
+      },
+    }
+    const services = { sessionQuery }
+    if (Object.hasOwn(options, 'connection')) services.connection = options.connection
+    const { ctx, routes } = fakeContext(services)
+    apply(ctx)
+    return { routes, calls, disposed: () => disposed }
+  }
+
+  it('returns only human prompts and assistant text for one session', async () => {
+    const { routes, calls, disposed } = conversationContext()
+    const { status, body } = await call(
+      routes.get('/dsh-simple-search/conversation'),
+      '/dsh-simple-search/conversation?sessionId=session-route&q=needle',
+    )
+    assert.equal(status, 200)
+    assert.equal(body.ok, true)
+    assert.equal(body.value.sessionId, 'session-route')
+    assert.equal(body.value.title, 'Route title')
+    assert.equal(body.value.cwd, '/tmp/route')
+    assert.equal(body.value.messageCount, 2)
+    assert.equal(body.value.matchCount, 2)
+    assert.deepEqual(body.value.matches.map((hit) => hit.role), ['assistant', 'user'])
+    assert.ok(body.value.matches.every((hit) => hit.snippet.includes('needle')))
+    const assistantHit = body.value.matches.find((hit) => hit.role === 'assistant')
+    assert.equal(assistantHit.turn, 1)
+    assert.equal(assistantHit.step, 1)
+    assert.equal(assistantHit.messageId, 'asst-route')
+    const userHit = body.value.matches.find((hit) => hit.role === 'user')
+    assert.equal(userHit.turn, 1)
+    assert.equal(userHit.messageId, 'msg-route')
+    assert.deepEqual(calls, ['session-route'])
+    assert.equal(disposed(), 1)
+  })
+
+  it('re-extracts after the log cursor advances', async () => {
+    const events = conversationEvents()
+    let cursor = 5
+    const { routes } = conversationContext({
+      sessionQuery: {
+        observeSession: async () => ({
+          header: { id: 'session-route', cwd: '/tmp/route' },
+          events,
+          cursor,
+          [Symbol.dispose]() {},
+        }),
+      },
+    })
+    const url = '/dsh-simple-search/conversation?sessionId=session-route&q=needle'
+    const first = await call(routes.get('/dsh-simple-search/conversation'), url)
+    assert.equal(first.body.value.matchCount, 2)
+    events.push({
+      type: 'user/message',
+      seq: 6,
+      time: 5_000,
+      data: { id: 'msg-later', content: [{ type: 'text', text: 'later needle' }], source: { kind: 'user' } },
+    })
+    cursor = 6
+    const second = await call(routes.get('/dsh-simple-search/conversation'), url)
+    assert.equal(second.body.value.matchCount, 3)
+    assert.equal(second.body.value.matches[0].role, 'user')
+  })
+
+  it('truncates at the requested match limit', async () => {
+    const { routes } = conversationContext()
+    const { status, body } = await call(
+      routes.get('/dsh-simple-search/conversation'),
+      '/dsh-simple-search/conversation?sessionId=session-route&q=needle&limit=1',
+    )
+    assert.equal(status, 200)
+    assert.equal(body.value.matchCount, 1)
+    assert.equal(body.value.truncated, true)
+  })
+
+  it('reports a missing session-query service as unavailable', async () => {
+    const { ctx, routes } = fakeContext({})
+    apply(ctx)
+    const { status, body } = await call(
+      routes.get('/dsh-simple-search/conversation'),
+      '/dsh-simple-search/conversation?sessionId=session-route&q=needle',
+    )
+    assert.equal(status, 503)
+    assert.equal(body.error.code, 'unavailable')
+  })
+
+  it('rejects a missing or malformed session id', async () => {
+    const { routes } = conversationContext()
+    for (const url of [
+      '/dsh-simple-search/conversation?q=needle',
+      '/dsh-simple-search/conversation?sessionId=bad%2Fid&q=needle',
+    ]) {
+      const { status, body } = await call(routes.get('/dsh-simple-search/conversation'), url)
+      assert.equal(status, 422)
+      assert.equal(body.error.code, 'bad-session')
+    }
+  })
+
+  it('reports an empty query as an invalid pattern', async () => {
+    const { routes } = conversationContext()
+    const { status, body } = await call(
+      routes.get('/dsh-simple-search/conversation'),
+      '/dsh-simple-search/conversation?sessionId=session-route&q=%20',
+    )
+    assert.equal(status, 400)
+    assert.equal(body.error.code, 'invalid-pattern')
+  })
+
+  it('reports a vanished session as not found', async () => {
+    const missing = new Error('session is gone')
+    missing.code = 'SESSION_QUERY_SESSION_NOT_FOUND'
+    const { routes } = conversationContext({
+      sessionQuery: { observeSession: async () => { throw missing } },
+    })
+    const { status, body } = await call(
+      routes.get('/dsh-simple-search/conversation'),
+      '/dsh-simple-search/conversation?sessionId=session-route&q=needle',
+    )
+    assert.equal(status, 404)
+    assert.equal(body.error.code, 'not-found')
+  })
+
+  it('reports an observation timeout as a gateway timeout', async () => {
+    const timeout = new Error('timed out')
+    timeout.name = 'TimeoutError'
+    const { routes } = conversationContext({
+      sessionQuery: { observeSession: async () => { throw timeout } },
+    })
+    const { status, body } = await call(
+      routes.get('/dsh-simple-search/conversation'),
+      '/dsh-simple-search/conversation?sessionId=session-route&q=needle',
+    )
+    assert.equal(status, 504)
+    assert.equal(body.error.code, 'timeout')
+  })
+
+  it('keeps the trust fence in front of the conversation route', async () => {
+    const { routes } = conversationContext({ connection: undefined })
+    const { status, body } = await call(
+      routes.get('/dsh-simple-search/conversation'),
+      '/dsh-simple-search/conversation?sessionId=session-route&q=needle',
+    )
+    assert.equal(status, 503)
+    assert.equal(body.error.code, 'auth-unavailable')
+  })
+})

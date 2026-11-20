@@ -77,7 +77,7 @@ const BINARY_EXTENSIONS = new Set([
 /** One search request after validation. */
 export class SearchError extends Error {
   /**
-   * @param {'invalid-pattern'|'bad-root'|'denied'} code - machine-readable cause.
+   * @param {'invalid-pattern'|'bad-root'|'denied'|'bad-session'|'not-found'|'unavailable'|'timeout'|'internal'} code - machine-readable cause.
    * @param {string} message - user-facing detail.
    */
   constructor(code, message) {

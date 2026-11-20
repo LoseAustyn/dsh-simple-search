@@ -24,7 +24,8 @@ npm run check
 |---|---|---|
 | 路由、认证、根解析、envelope | `index.js` | `tests/route.test.mjs` + `npm run check:auth` |
 | 搜索、匹配、排序、限制、跳过表 | `search.js` | `tests/search.test.mjs` |
-| 浮层、双击、外观卡、交互 | `client.js` | `tests/client.test.mjs` |
+| 会话文本提取、思考/工具排除、会话上限 | `conversation.js` | `tests/conversation.test.mjs` |
+| 浮层、双击、范围切换、外观卡、交互 | `client.js` | `tests/client.test.mjs` |
 | 清单、locale、图标、包内容 | `package.json`、`cordis.patch.yml`、`locale/`、`icon.svg` | `npm run check:pack` |
 | 测试、门禁脚本 | `tests/`、`scripts/` | 对应命令 |
 
@@ -43,7 +44,7 @@ npm run check
 
 ## 4. 测试
 
-- 纯核心 → `search.test.mjs`；路由/栅栏 → `route.test.mjs`；浏览器半 → `client.test.mjs`。
+- 纯核心 → `search.test.mjs` / `conversation.test.mjs`；路由/栅栏 → `route.test.mjs`；浏览器半 → `client.test.mjs`。
 - 真实 HTTP 只加在 `scripts/verify-auth-fence.mjs`，不要为此在单测里监听端口。
 - 新测试先证明能失败：改代码前跑一次，或临时回退断言。
 - 新测试文件必须加入 `package.json` 的 `test` 脚本。
@@ -53,8 +54,8 @@ npm run check
 
 | 改动 | 生效 | 验证 |
 |---|---|---|
-| `index.js` / `search.js` | 换目录名重装或重启宿主 | `/dsh-simple-search/version` 的 `version`/`pid` 变化；`npm run check:auth` |
-| `client.js` | 刷新页面（dev:web 可热替换） | 双击 Shift + 外观卡 |
+| `index.js` / `search.js` / `conversation.js` | 换目录名重装或重启宿主 | `/dsh-simple-search/version` 的 `version`/`pid` 变化；`npm run check:auth` |
+| `client.js` | 刷新页面（dev:web 可热替换） | 双击 Shift + 范围切换 + 外观卡 |
 | 清单/locale/图标 | 重装 + 刷新 | `install_bundle` applied、warnings 空；插件页 |
 | tests/scripts | 无需重载 | 对应命令 |
 

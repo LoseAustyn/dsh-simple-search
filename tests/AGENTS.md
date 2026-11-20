@@ -5,8 +5,9 @@
 ## 归属
 
 - `search.test.mjs`：`search.js` 的纯核心；可用真实临时目录。
-- `route.test.mjs`：`apply()` + fake ctx；覆盖栅栏、根解析、响应 envelope。
-- `client.test.mjs`：`vm` 执行 `client.js` + fake React/localStorage；覆盖注册、外观偏好、主题跟随。
+- `conversation.test.mjs`：`conversation.js` 的纯核心；事件 fixture 覆盖人类 prompt、assistant 正文、思考/工具排除与上限。
+- `route.test.mjs`：`apply()` + fake ctx；覆盖栅栏、根解析、会话观察、响应 envelope。
+- `client.test.mjs`：`vm` 执行 `client.js` + fake React/localStorage；覆盖注册、外观偏好、主题跟随、范围切换、标题匹配与消息定位/复制回退。
 - `scripts/verify-auth-fence.mjs` 不属于本目录：它是真实 loopback HTTP 的认证集成，覆盖运行中 DSH 到不了的 `connection` 缺失分支。
 
 ## 规则

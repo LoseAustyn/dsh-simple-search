@@ -1,9 +1,16 @@
 /**
- * Host half of the simple-search bundle: two loopback routes the browser half
+ * Host half of the simple-search bundle: three loopback routes the browser half
  * calls.
  *
- *  GET /dsh-simple-search/version   — self-check: which code is loaded.
- *  GET /dsh-simple-search/search    — full-text search over one workspace.
+ *  GET /dsh-simple-search/version       — self-check: which code is loaded.
+ *  GET /dsh-simple-search/search        — full-text search over one workspace.
+ *  GET /dsh-simple-search/conversation  — human-visible text of one Session.
+ *
+ * The conversation route reads a Session through the host's `sessionQuery`
+ * service and searches only direct human prompts and assistant text; reasoning
+ * blocks and tool traffic stay out. Session *title* search is client-side over
+ * the in-page Session list, which already spans every workspace, so it needs
+ * no host route.
  *
  * The search root is resolved from, in order: the calling Session's committed
  * working directory, an explicit `root` param that must sit inside a
@@ -22,6 +29,7 @@
 import fsp from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import nodePath from 'node:path'
+import { conversationDocuments, matchConversation } from './conversation.js'
 import { SearchError, isWithin, searchWorkspace } from './search.js'
 
 /** Plugin identity for diagnostics. */
@@ -31,8 +39,20 @@ const require = createRequire(import.meta.url)
 const VERSION = require('./package.json').version
 const ROUTE_VERSION = '/dsh-simple-search/version'
 const ROUTE_SEARCH = '/dsh-simple-search/search'
+const ROUTE_CONVERSATION = '/dsh-simple-search/conversation'
 /** Refusal when the deployment cannot authenticate the caller at all. */
 const AUTH_UNAVAILABLE = 503
+/** Wall-clock budget for observing one Session log. */
+const CONVERSATION_TIMEOUT_MS = 8_000
+/** Maximum searchable queries kept for the conversation extraction cache. */
+const CONVERSATION_CACHE_SIZE = 3
+/**
+ * Extraction cache keyed by Session id and the log cursor it was built from.
+ * Re-observing an unchanged live Session is cheap, but re-extracting every
+ * message on each keystroke is not; the cursor invalidates it on append.
+ * @type {Map<string, {cursor: number, length: number, extracted: object}>}
+ */
+const conversationCache = new Map()
 
 /** Session ids are opaque but bounded: `session-<uuid>` or a bare uuid. */
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/
@@ -252,6 +272,103 @@ async function handleSearch(ctx, req, res) {
 }
 
 /**
+ * Remember one extracted conversation, evicting the oldest entry.
+ * @param {string} sessionId - validated Session id.
+ * @param {number} cursor - log cursor the extraction was built from.
+ * @param {number} length - event count paired with the cursor.
+ * @param {object} extracted - `conversationDocuments` output.
+ */
+function rememberConversation(sessionId, cursor, length, extracted) {
+  conversationCache.delete(sessionId)
+  conversationCache.set(sessionId, { cursor, length, extracted })
+  while (conversationCache.size > CONVERSATION_CACHE_SIZE) {
+    conversationCache.delete(conversationCache.keys().next().value)
+  }
+}
+
+/**
+ * Map an observation failure onto a stable route error.
+ * @param {unknown} error - thrown by `sessionQuery.observeSession`.
+ * @returns {SearchError} route error.
+ */
+function conversationFailure(error) {
+  const code = error?.code
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError' || code === 'SESSION_QUERY_ABORTED') {
+    return new SearchError('timeout', '读取会话超时，请稍后再试')
+  }
+  if (code === 'SESSION_QUERY_SESSION_NOT_FOUND') {
+    return new SearchError('not-found', '会话不存在或尚未落盘')
+  }
+  return new SearchError('internal', String(error?.message ?? error))
+}
+
+/**
+ * Answer one current-Session content search.
+ *
+ * The response contains only human prompts and assistant text blocks; the
+ * extraction is cached per log cursor so typing does not re-walk the whole log.
+ * @param {import('@deepseek-ai/cordis').Context} ctx - host context.
+ * @param {import('node:http').IncomingMessage} req - request.
+ * @param {import('node:http').ServerResponse} res - response.
+ */
+async function handleConversation(ctx, req, res) {
+  const url = new URL(req.url ?? '/', 'http://localhost')
+  const query = (url.searchParams.get('q') ?? '').trim()
+  if (query === '') throw new SearchError('invalid-pattern', '搜索关键词不能为空')
+  if (query.length > 300) throw new SearchError('invalid-pattern', '搜索关键词不能超过 300 个字符')
+  const sessionId = url.searchParams.get('sessionId') ?? ''
+  if (!SESSION_ID.test(sessionId)) throw new SearchError('bad-session', '缺少或非法的会话 ID')
+
+  const sessionQuery = ctx.get('sessionQuery')
+  if (sessionQuery === undefined || sessionQuery === null
+    || typeof sessionQuery.observeSession !== 'function') {
+    throw new SearchError('unavailable', '宿主未提供会话查询服务，暂时无法搜索会话内容')
+  }
+
+  const startedAt = Date.now()
+  let observation
+  try {
+    observation = await sessionQuery.observeSession(sessionId, {
+      projectionMode: 'none',
+      signal: AbortSignal.timeout(CONVERSATION_TIMEOUT_MS),
+    })
+  } catch (error) {
+    throw conversationFailure(error)
+  }
+  if (observation === undefined || observation === null) {
+    throw new SearchError('not-found', '会话不存在')
+  }
+
+  try {
+    const events = Array.isArray(observation.events) ? observation.events : []
+    const cursor = Number(observation.cursor ?? -1)
+    const cached = conversationCache.get(sessionId)
+    const fresh = cached !== undefined && cached.cursor === cursor && cached.length === events.length
+    const extracted = fresh ? cached.extracted : conversationDocuments(events)
+    if (!fresh) rememberConversation(sessionId, cursor, events.length, extracted)
+    const result = matchConversation(extracted, {
+      query,
+      regex: url.searchParams.get('regex') === '1',
+      caseSensitive: url.searchParams.get('case') === '1',
+      limit: Number(url.searchParams.get('limit') ?? '') || undefined,
+    })
+    ok(res, {
+      sessionId,
+      title: result.title,
+      cwd: typeof observation.header?.cwd === 'string' ? observation.header.cwd : '',
+      messageCount: result.messageCount,
+      matchCount: result.matches.length,
+      matches: result.matches,
+      scanned: result.scanned,
+      truncated: result.truncated === true,
+      elapsedMs: Date.now() - startedAt,
+    })
+  } finally {
+    if (typeof observation[Symbol.dispose] === 'function') observation[Symbol.dispose]()
+  }
+}
+
+/**
  * Mount the routes.
  * @param {import('@deepseek-ai/cordis').Context} ctx - host context.
  */
@@ -270,7 +387,13 @@ export function apply(ctx) {
       await handler(req, res)
     } catch (error) {
       if (error instanceof SearchError) {
-        const status = error.code === 'invalid-pattern' ? 400 : error.code === 'denied' ? 403 : 422
+        const status = error.code === 'invalid-pattern' ? 400
+          : error.code === 'denied' ? 403
+            : error.code === 'not-found' ? 404
+              : error.code === 'bad-root' || error.code === 'bad-session' ? 422
+                : error.code === 'unavailable' || error.code === 'auth-unavailable' ? 503
+                  : error.code === 'timeout' ? 504
+                    : 500
         fail(res, status, error.code, error.message)
         return
       }
@@ -285,7 +408,7 @@ export function apply(ctx) {
       ok(res, {
         plugin: name,
         version: VERSION,
-        capabilities: ['search', 'rg', 'walk'],
+        capabilities: ['search', 'rg', 'walk', 'conversation'],
         pid: process.pid,
       })
     }),
@@ -296,4 +419,10 @@ export function apply(ctx) {
     path: ROUTE_SEARCH,
     handler: guard((req, res) => handleSearch(ctx, req, res)),
   }), 'dsh-simple-search: search route')
+
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: ROUTE_CONVERSATION,
+    handler: guard((req, res) => handleConversation(ctx, req, res)),
+  }), 'dsh-simple-search: conversation route')
 }

@@ -75,6 +75,13 @@ function loadPlugin(options = {}) {
   const body = {
     hasAttribute(name) { return name === 'data-ds-dark-theme' ? options.bodyDark === true : false },
   }
+  const clipboard = {
+    text: '',
+    writeText(text) {
+      this.text = text
+      return Promise.resolve()
+    },
+  }
   const sandbox = {
     window: {
       localStorage: storage,
@@ -86,7 +93,22 @@ function loadPlugin(options = {}) {
       requestAnimationFrame() { return 0 },
       cancelAnimationFrame() {},
     },
-    document: { body, baseURI: 'http://localhost/', createElement() { return {} } },
+    document: {
+      body,
+      baseURI: 'http://localhost/',
+      createElement() { return {} },
+      querySelector(selector) {
+        if (typeof selector !== 'string' || !selector.startsWith('[data-conversation-session=')) return null
+        return {
+          querySelectorAll(inner) {
+            return inner === '[data-chat-anchor-key]' || inner === '[data-chat-node-key]'
+              ? (options.chatRows ?? [])
+              : []
+          },
+        }
+      },
+    },
+    navigator: { clipboard },
     console,
     URL,
     AbortController,
@@ -98,7 +120,7 @@ function loadPlugin(options = {}) {
     if (name === 'react') return React
     throw new Error(`unexpected module request: ${name}`)
   })
-  return { plugin, React, storage }
+  return { plugin, React, storage, clipboard }
 }
 
 /**
@@ -123,6 +145,10 @@ function setup(options = {}) {
   const ctx = {
     get(name) {
       if (name === 'theme') return options.theme
+      if (name === 'sessions') return options.sessions
+      if (name === 'uiSession') return options.uiSession
+      if (name === 'uiWorkspace') return options.uiWorkspace
+      if (name === 'betterSidebar') return options.betterSidebar
       return undefined
     },
     on(event, listener) {
@@ -328,5 +354,296 @@ describe('registrations and dictionaries', () => {
     assert.equal(dicts.en['appearance.light'], 'Light')
     assert.equal(dicts.en['appearance.dark'], 'Dark')
     assert.equal(dicts.en['appearance.follow'], 'Follow DSH')
+  })
+})
+
+/**
+ * Build a Session-list snapshot shaped like `ctx.sessions.list.getSnapshot()`.
+ * @param {Array<object>} rows - session rows; `mainView` marks the open chat.
+ * @returns {object} SessionListState snapshot.
+ */
+function sessionSnapshot(rows) {
+  const byId = {}
+  for (const row of rows) {
+    byId[row.id] = {
+      id: row.id,
+      title: row.title,
+      displayTitle: row.displayTitle ?? row.title,
+      cwd: row.cwd,
+      updatedAt: row.updatedAt,
+      running: row.running === true,
+      blank: row.blank === true,
+      origin: row.origin,
+      retainedBy: row.mainView === true ? { mainView: 1 } : {},
+    }
+  }
+  return { ids: rows.map((row) => row.id), byId, phase: 'ready', projectionsBySession: {} }
+}
+
+/**
+ * Fake `ctx.sessions` exposing a fixed catalog.
+ * @param {object} snapshot - SessionListState.
+ * @returns {object} sessions service stand-in.
+ */
+function fakeSessions(snapshot) {
+  return {
+    list: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+    refresh: async () => {},
+  }
+}
+
+describe('search scopes', () => {
+  /**
+   * Render the overlay with the supplied initial state.
+   * @param {object} harness - mounted plugin harness.
+   * @returns {object} rendered tree.
+   */
+  function renderOverlay(harness) {
+    return harness.overlay.component({ t: translate })
+  }
+
+  it('shows three scopes and keeps the file tabs in the workspace scope', () => {
+    const workspace = setup({ stateOverrides: { 1: true } })
+    const workspaceTree = renderOverlay(workspace)
+    assert.deepEqual(
+      findAll(workspaceTree, node => node.props?.className === 'gs-scope')
+        .map(button => button.props.children),
+      ['scope.workspace', 'scope.sessions', 'scope.conversation'],
+    )
+    assert.equal(findAll(workspaceTree, node => node.props?.className === 'gs-tabs').length, 1)
+
+    const sessions = setup({ stateOverrides: { 1: true, 2: 'sessions' } })
+    const sessionsTree = renderOverlay(sessions)
+    assert.equal(findAll(sessionsTree, node => node.props?.className === 'gs-tabs').length, 0)
+    assert.equal(
+      findAll(sessionsTree, node => node.props?.className === 'gs-input')[0].props.placeholder,
+      'search.placeholder.sessions',
+    )
+
+    const conversation = setup({ stateOverrides: { 1: true, 2: 'conversation' } })
+    assert.equal(
+      findAll(renderOverlay(conversation), node => node.props?.className === 'gs-input')[0].props.placeholder,
+      'search.placeholder.conversation',
+    )
+  })
+
+  it('lists session titles across workspaces and opens the selected session', () => {
+    const snapshot = sessionSnapshot([
+      { id: 'session-alpha', title: 'Alpha plan', cwd: '/home/chen/projects/alpha', updatedAt: 200 },
+      { id: 'session-beta', title: 'Beta notes', cwd: '/srv/beta', updatedAt: 100 },
+      { id: 'session-sub', title: 'Alpha subagent', cwd: '/home/chen/projects/alpha', updatedAt: 300, origin: 'subagent' },
+    ])
+    const opened = []
+    const harness = setup({
+      sessions: fakeSessions(snapshot),
+      uiWorkspace: { openSession: (id) => opened.push(id) },
+      stateOverrides: { 1: true, 2: 'sessions', 3: 'alpha', 12: snapshot },
+    })
+    const tree = renderOverlay(harness)
+    const rows = findAll(tree, node => node.props?.className === 'gs-session')
+    assert.equal(rows.length, 1)
+    assert.equal(findAll(rows[0], node => node.props?.className === 'gs-session-title')[0].props.children, 'Alpha plan')
+    assert.equal(findAll(rows[0], node => node.props?.className === 'gs-session-meta')[0].props.children, 'alpha')
+    rows[0].props.onClick()
+    assert.deepEqual(opened, ['session-alpha'])
+  })
+
+  it('matches a session by its workspace directory', () => {
+    const snapshot = sessionSnapshot([
+      { id: 'session-alpha', title: 'Alpha plan', cwd: '/home/chen/projects/alpha', updatedAt: 200 },
+      { id: 'session-beta', title: 'Notes', cwd: '/srv/beta', updatedAt: 100 },
+    ])
+    const harness = setup({
+      sessions: fakeSessions(snapshot),
+      stateOverrides: { 1: true, 2: 'sessions', 3: 'beta', 12: snapshot },
+    })
+    const rows = findAll(renderOverlay(harness), node => node.props?.className === 'gs-session')
+    assert.equal(rows.length, 1)
+    assert.equal(findAll(rows[0], node => node.props?.className === 'gs-session-title')[0].props.children, 'Notes')
+  })
+
+  it('renders current-session matches with roles and copies the full message', async () => {
+    const snapshot = sessionSnapshot([
+      { id: 'session-a', title: 'Chat', cwd: '/workspace', updatedAt: 10, mainView: true },
+    ])
+    const conversation = {
+      sessionId: 'session-a',
+      title: 'Chat',
+      cwd: '/workspace',
+      messageCount: 2,
+      matchCount: 2,
+      truncated: false,
+      elapsedMs: 3,
+      matches: [
+        {
+          seq: 8, role: 'assistant', time: 1_700_000_000_000, text: 'full assistant text',
+          snippet: '…needle answer…', matchCount: 1,
+        },
+        {
+          seq: 3, role: 'user', time: 1_699_999_999_000, text: 'needle question',
+          snippet: 'needle question', matchCount: 1,
+        },
+      ],
+    }
+    const harness = setup({
+      sessions: fakeSessions(snapshot),
+      stateOverrides: { 1: true, 2: 'conversation', 3: 'needle', 12: snapshot, 13: 'ready', 14: conversation },
+    })
+    const rows = findAll(renderOverlay(harness), node => node.props?.className === 'gs-message')
+    assert.equal(rows.length, 2)
+    assert.equal(
+      findAll(rows[0], node => node.props?.className === 'gs-message-role')[0].props.children,
+      'message.role.assistant',
+    )
+    assert.ok(findAll(rows[0], node => node.type === 'mark').length >= 1)
+    rows[0].props.onClick()
+    await new Promise((resolve) => { setImmediate(resolve) })
+    assert.equal(harness.clipboard.text, 'full assistant text')
+  })
+
+  it('jumps to the matching chat row instead of copying', async () => {
+    const snapshot = sessionSnapshot([
+      { id: 'session-a', title: 'Chat', cwd: '/workspace', updatedAt: 10, mainView: true },
+    ])
+    const conversation = {
+      sessionId: 'session-a',
+      title: 'Chat',
+      cwd: '/workspace',
+      messageCount: 1,
+      matchCount: 1,
+      truncated: false,
+      elapsedMs: 3,
+      matches: [{
+        seq: 8, role: 'assistant', turn: 1, step: 1, messageId: 'asst-8',
+        time: 1_700_000_000_000, text: 'full assistant text', snippet: '…needle answer…', matchCount: 1,
+      }],
+    }
+    const reasoningRow = {
+      attributes: {
+        'data-chat-anchor-key': '["14:assistant-step1:1","reasoning"]',
+        'data-chat-node-key': '14:assistant-step1:1',
+      },
+      getAttribute(name) { return this.attributes[name] ?? null },
+      scrollIntoView(options) { this.scroll = options },
+    }
+    const row = {
+      attributes: { 'data-chat-anchor-key': '14:assistant-step1:1', 'data-chat-node-key': '14:assistant-step1:1' },
+      getAttribute(name) { return this.attributes[name] ?? null },
+      scrollIntoView(options) { this.scroll = options },
+    }
+    const harness = setup({
+      sessions: fakeSessions(snapshot),
+      chatRows: [reasoningRow, row],
+      stateOverrides: { 1: true, 2: 'conversation', 3: 'needle', 12: snapshot, 13: 'ready', 14: conversation },
+    })
+    const rows = findAll(renderOverlay(harness), node => node.props?.className === 'gs-message')
+    assert.equal(findAll(rows[0], node => node.props?.className === 'gs-message-role')[0].props.children, 'message.role.assistant')
+    rows[0].props.onClick()
+    await new Promise((resolve) => { setImmediate(resolve) })
+    assert.equal(reasoningRow.scroll, undefined)
+    assert.equal(row.scroll.block, 'center')
+    assert.equal(row.scroll.behavior, 'smooth')
+    assert.equal(harness.clipboard.text, '')
+  })
+
+  it('falls back to the response part when the anchor key format moves', async () => {
+    const snapshot = sessionSnapshot([
+      { id: 'session-a', title: 'Chat', cwd: '/workspace', updatedAt: 10, mainView: true },
+    ])
+    const conversation = {
+      sessionId: 'session-a',
+      title: 'Chat',
+      cwd: '/workspace',
+      messageCount: 1,
+      matchCount: 1,
+      truncated: false,
+      elapsedMs: 3,
+      matches: [{
+        seq: 9, role: 'assistant', turn: 2, step: 1, messageId: 'asst-9',
+        time: 1_700_000_000_000, text: 'full assistant text', snippet: '…needle answer…', matchCount: 1,
+      }],
+    }
+    const reasoningRow = {
+      attributes: { 'data-chat-node-key': '14:assistant-step2:1', 'data-chat-group-part': 'reasoning' },
+      getAttribute(name) { return this.attributes[name] ?? null },
+      scrollIntoView(options) { this.scroll = options },
+    }
+    const responseRow = {
+      attributes: { 'data-chat-node-key': '14:assistant-step2:1', 'data-chat-group-part': 'response' },
+      getAttribute(name) { return this.attributes[name] ?? null },
+      scrollIntoView(options) { this.scroll = options },
+    }
+    const harness = setup({
+      sessions: fakeSessions(snapshot),
+      chatRows: [reasoningRow, responseRow],
+      stateOverrides: { 1: true, 2: 'conversation', 3: 'needle', 12: snapshot, 13: 'ready', 14: conversation },
+    })
+    const rows = findAll(renderOverlay(harness), node => node.props?.className === 'gs-message')
+    rows[0].props.onClick()
+    await new Promise((resolve) => { setImmediate(resolve) })
+    assert.equal(reasoningRow.scroll, undefined)
+    assert.equal(responseRow.scroll.block, 'center')
+  })
+
+  it('computes the user message anchor from its durable id', async () => {
+    const snapshot = sessionSnapshot([
+      { id: 'session-a', title: 'Chat', cwd: '/workspace', updatedAt: 10, mainView: true },
+    ])
+    const conversation = {
+      sessionId: 'session-a',
+      title: 'Chat',
+      cwd: '/workspace',
+      messageCount: 1,
+      matchCount: 1,
+      truncated: false,
+      elapsedMs: 3,
+      matches: [{
+        seq: 3, role: 'user', turn: 1, messageId: 'msg-3',
+        time: 1_699_999_999_000, text: 'needle question', snippet: 'needle question', matchCount: 1,
+      }],
+    }
+    const row = {
+      attributes: { 'data-chat-anchor-key': '13:input-messagemsg-3', 'data-chat-node-key': '13:input-messagemsg-3' },
+      getAttribute(name) { return this.attributes[name] ?? null },
+      scrollIntoView(options) { this.scroll = options },
+    }
+    const harness = setup({
+      sessions: fakeSessions(snapshot),
+      chatRows: [row],
+      stateOverrides: { 1: true, 2: 'conversation', 3: 'needle', 12: snapshot, 13: 'ready', 14: conversation },
+    })
+    const rows = findAll(renderOverlay(harness), node => node.props?.className === 'gs-message')
+    rows[0].props.onClick()
+    await new Promise((resolve) => { setImmediate(resolve) })
+    assert.equal(row.scroll.block, 'center')
+    assert.equal(row.scroll.behavior, 'smooth')
+  })
+
+  it('asks for an open chat when no current session is known', () => {
+    const snapshot = sessionSnapshot([
+      { id: 'session-a', title: 'Chat', cwd: '/workspace', updatedAt: 10 },
+    ])
+    const harness = setup({
+      sessions: fakeSessions(snapshot),
+      stateOverrides: { 1: true, 2: 'conversation', 3: 'needle', 12: snapshot },
+    })
+    const tree = renderOverlay(harness)
+    assert.equal(
+      findAll(tree, node => node.props?.children === 'state.noSession').length,
+      1,
+    )
+  })
+
+  it('publishes the scope strings in both dictionaries', () => {
+    const harness = setup()
+    const dicts = harness.dictionaries.simpleSearch
+    assert.equal(dicts.zh['scope.sessions'], '会话标题')
+    assert.equal(dicts.zh['scope.conversation'], '本会话')
+    assert.equal(dicts.en['scope.sessions'], 'Sessions')
+    assert.equal(dicts.en['scope.conversation'], 'This chat')
+    assert.equal(dicts.zh['state.conversationEmpty'], '当前会话里没有匹配的消息')
+    assert.equal(dicts.en['message.role.assistant'], 'Assistant')
+    assert.equal(dicts.zh['message.reveal'], '定位到这条消息')
+    assert.equal(dicts.en['footer.copy'], 'Enter jump')
   })
 })
