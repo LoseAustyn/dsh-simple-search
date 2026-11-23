@@ -93,4 +93,4 @@ curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-searc
 
 ## 发布
 
-见 `.agents/skills/simple-search-release/SKILL.md`；变更日志写 `CHANGELOG.md`。当前包是 `private: true`，安装方式是 profile `link:`；若要发 npm，先按决策记录改分发方式。
+见 `.agents/skills/simple-search-release/SKILL.md`；变更日志写 `CHANGELOG.md`（中文默认）与 `CHANGELOG.en.md`（英文），两版同一次改动里同步。当前包是 `private: true`，安装方式是 profile `link:`；若要发 npm，先按决策记录改分发方式。

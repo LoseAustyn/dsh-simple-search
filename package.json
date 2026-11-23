@@ -28,7 +28,7 @@
     "locale/*.json",
     "icon.svg",
     "README.md",
-    "README.zh-CN.md"
+    "README.en.md"
   ],
   "scripts": {
     "test": "node --test tests/search.test.mjs tests/conversation.test.mjs tests/route.test.mjs tests/client.test.mjs",

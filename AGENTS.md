@@ -67,6 +67,7 @@ node --test --test-name-pattern 'version' tests/route.test.mjs
 - JSDoc 写非显然契约；注释解释“为什么”，不写改动历史。
 - 不在 `search.js` 引入 `ctx`/HTTP；不在 `conversation.js` 引入 `ctx`/HTTP/文件系统；不在 `index.js` 复制搜索或提取算法。
 - 新增测试遵循 `tests/AGENTS.md`；不要引入 jsdom/Playwright 或网络依赖。
+- 文档默认中文：`README.md` 与 `CHANGELOG.md` 是中文版，英文版为 `README.en.md`、`CHANGELOG.en.md`；同一改动的两种语言版本一起提交。
 - 消息定位只读 Chat 的 `data-chat-anchor-key`（assistant 的 response 行；reasoning 行共用 node-key 但不可见）并调用 `session.loadThrough`；不得写 Chat 的 DOM/状态，找不到锚点必须回退复制。
 
 ## 决策与计划

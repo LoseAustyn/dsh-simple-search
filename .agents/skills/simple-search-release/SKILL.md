@@ -27,7 +27,7 @@ git ls-remote --heads origin main
 node -p "require('./package.json').version"
 ```
 
-同步 `CHANGELOG.md`：把 `Unreleased` 条目移到 `## [x.y.z] - YYYY-MM-DD`，写用户可见行为、兼容性、迁移说明；不复制 commit 列表。
+同步 `CHANGELOG.md`（中文默认）与 `CHANGELOG.en.md`（英文）：把 `Unreleased` 条目移到 `## [x.y.z] - YYYY-MM-DD`，写用户可见行为、兼容性、迁移说明；两版内容一致，不复制 commit 列表。
 
 ## 3. 验证
 
@@ -55,7 +55,7 @@ curl -s http://127.0.0.1:3080/dsh-simple-search/version
 ## 4. 提交与打 tag
 
 ```sh
-git add package.json CHANGELOG.md
+git add package.json CHANGELOG.md CHANGELOG.en.md
 git commit -m "Release x.y.z"
 git tag vx.y.z
 git push origin main --tags
@@ -82,7 +82,7 @@ Unverified: npm publish / 真实用户安装（如未做）
 ## 成功判据
 
 - 版本只在 `package.json`；`/version` 与之一致。
-- `CHANGELOG.md` 有对应条目。
+- `CHANGELOG.md` 与 `CHANGELOG.en.md` 都有对应条目，内容一致。
 - 包内容符合预期，无测试/开发文件。
 - 远端 main 与 tag 的 SHA 已用 `git ls-remote` 复核。
 - 未执行的发布/安装动作明确标注，不写成已完成。

@@ -1,166 +1,80 @@
-# Simple Search（简单搜索）
+# 简单搜索（Simple Search）
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Supported DSH versions: 0.2.2-rc.2+](https://img.shields.io/badge/DSH-0.2.2--rc.2%2B-4d6bfe)](https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions)
+[![支持的 DSH 版本: 0.2.2-rc.2+](https://img.shields.io/badge/DSH-0.2.2--rc.2%2B-4d6bfe)](https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions)
 
-[简体中文](README.zh-CN.md)
+[English](README.en.md)
 
-A DSH Web UI plugin: press **Shift twice** anywhere in the page to open a
-JetBrains-style **Simple Search** box with three scopes:
+一个 DSH Web UI 插件：在页面任意位置**双击 Shift**，即可打开 JetBrains 风格的**简单搜索**面板，提供三个搜索范围：
 
-- **Workspace** — searches **file names** and the **text of every file** in the
-  current workspace, with `All` / `Files` / `Text` tabs. `Enter` opens the
-  selected hit in the side-card editor (at its line for text hits).
-- **Sessions** — searches **session titles across every workspace** (the title,
-  the workspace directory name, and the session id). `Enter` opens that chat,
-  switching workspace when needed.
-- **This chat** — searches the **content of the current conversation**. Only
-  text both sides actually saw is searched: your prompts and the assistant's
-  visible replies. Reasoning/thinking, tool calls, tool results, synthetic
-  context and system prompts are excluded. `Enter` jumps to that message in the
-  Chat view (loading older history when needed); if no Chat anchor is available
-  it copies the full message instead.
+- **工作区文件**：搜索当前工作区的**文件名**与**每个文件的内容**，提供「全部 / 文件 / 文本」三个标签页；`Enter` 在侧栏卡片编辑器中打开选中项（文本命中会定位到对应行）。
+- **会话标题**：**跨工作区**搜索会话标题（同时匹配标题、工作区目录名与会话 id）；`Enter` 打开该会话，需要时切换到对应工作区。
+- **本会话**：搜索**当前对话的内容**，只包含双方实际看到的文字——你输入的消息与助手可见的回复；思考过程、工具调用/结果、合成上下文与系统提示都不参与。`Enter` 在 Chat 视图中定位到该条消息（必要时先加载更早历史）；找不到 Chat 锚点时回退为复制整条消息。
 
-`↑`/`↓` move through the hits, `Tab` / `Shift+Tab` cycle the three scopes,
-and `Esc` closes. Opening the panel selects the previous query, so typing or
-pasting replaces it.
+`↑`/`↓` 切换结果，`Tab` / `Shift+Tab` 循环切换三个范围，`Esc` 关闭。打开面板时会选中上一次的查询，直接输入或粘贴即可替换。
 
-With a chat open, highlight a file (or a text hit inside one) in the panel and
-press **`Alt+Enter`** to insert that file as a native DSH `@` reference into the
-chat input; the panel closes and focus returns to the composer.
+有会话打开时，在面板里选中一个文件（或文件内的文本命中），按 **`Alt+Enter`** 即可把该文件作为 DSH 原生 `@` 引用插入当前会话输入框；面板关闭，焦点回到输入框。
 
-## What it does
+## 功能
 
-- Double-tap detection means "two clean Shift presses" within 400 ms: holding
-  Shift or typing `Shift`+letter never opens the panel.
-- Content search runs on the host: the packaged ripgrep binary when resolvable
-  (`@vscode/ripgrep`, `rg` on `PATH`, or `DSH_SIMPLE_SEARCH_RG`), with a bounded
-  Node.js walk as the fallback, so the feature keeps working without ripgrep.
-- File-name search lists the workspace once (cached for 10 s while typing) and
-  ranks by a JetBrains-style scorer: exact basename, basename substring, path
-  substring, then fuzzy subsequence (so `htexec` finds `http-executor.ts`).
-  `All` returns both sections from one request.
-- `.gitignore` rules are **not** applied (`--no-ignore-vcs`): many workspaces
-  are root repos that ignore every sub-repository, and JetBrains-style search
-  is expected to look inside them. Heavy trees (`.git`, `node_modules`, `dist`,
-  `.venv*`, caches, `.dsh-memory`) are excluded explicitly instead, and both
-  engines share one exclusion list.
-- Case-sensitive (`Aa`) and regular-expression (`.*`) toggles.
-- Session titles are matched locally against the page's loaded session catalog,
-  so they need no host round-trip and always cover every workspace. Blank
-  placeholders and subagent child sessions are excluded; results are newest
-  first.
-- Current-chat content is read from the committed Session log on the host, so
-  it reaches older history outside the loaded window. The host route
-  (`/dsh-simple-search/conversation`) sits behind the same trust fence as the
-  file routes, caps the scan (5,000 messages), the response (200 hits) and the
-  observation (8 s), and caches the extraction per log cursor. Reasoning blocks
-  ("thinking"), tool calls/results and system prompts never enter the search
-  surface.
-- **@ file references from the panel**: highlight a file-name row, or a text
-  hit inside a file, and press `Alt+Enter`: the file is inserted as a native
-  DSH `@path` reference (`@"path with spaces"` for paths with whitespace) into
-  the current chat's input, the panel closes, and focus returns to the composer.
-  The caret span comes from the Session composer's public `inputActions`
-  (`captureInsertion`) through a `conversation.input.overlay` bridge; insertion
-  goes through the Session's public input facade, so the draft revision is
-  honored. When no chat is open, or the composer refuses the edit (a frozen
-  draft, an older DSH), the mention text is copied instead. The verb lives in
-  the panel's own key handler, so it exists only while the panel is open —
-  `Shift+Enter` in the composer remains DSH's newline shortcut.
-- `Tab` / `Shift+Tab` cycle Workspace → Sessions → This chat (and back) while
-  the search field has focus; clicking a scope tab still works.
-- Results group per file with the matched text highlighted; the footer shows the
-  workspace root, hit/file counts, engine, and elapsed time.
-- Appearance is a three-way choice — **Light / Dark / Follow DSH** — on the
-  bundle's page in **Plugins → Simple Search** → *Appearance*; the choice is
-  kept in browser `localStorage` (`dsh-simple-search:appearance`). *Follow DSH*
-  reads the DSH theme's effective palette (`body[data-ds-dark-theme]`, plus the
-  `theme/change` event) and tracks theme switches or OS flips; Light and Dark
-  pin the panel. Both palettes are CSS variables inside the panel and set the
-  matching `color-scheme`, so the caret, selection and scrollbars follow.
-- Activating a hit (click or `Enter`) opens the file **and closes the panel**.
-  `Enter` opens the file at the exact line through `ctx.betterSidebar.openFile`
-  when that plugin is installed; other deployments copy `path:line`, show a
-  short notice, and close a beat later.
+- 双击判定为 400 ms 内两次干净的 Shift 按键：按住 Shift 或输入 `Shift`+字母不会误触发。
+- 内容搜索由宿主执行：优先使用可解析到的随包 ripgrep（`@vscode/ripgrep`、`PATH` 上的 `rg`，或 `DSH_SIMPLE_SEARCH_RG`）；不可用时回退到有界的 Node.js 遍历，没有 ripgrep 也能工作。
+- 文件名搜索会列出工作区文件（输入时缓存 10 秒），排序使用 JetBrains 风格评分：完全匹配 basename、basename 子串、路径子串，最后是模糊子序列（例如 `htexec` 能找到 `http-executor.ts`）。「全部」在一次请求中返回两类结果。
+- **不应用** `.gitignore` 规则（`--no-ignore-vcs`）：很多工作区是忽略所有子仓库的根仓库，JetBrains 风格搜索需要能看到子仓库内部。改为显式排除重目录（`.git`、`node_modules`、`dist`、`.venv*`、缓存、`.dsh-memory`），两种引擎共用同一份排除表。
+- 支持大小写敏感（`Aa`）与正则表达式（`.*`）开关。
+- 会话标题在浏览器内匹配页面已加载的会话目录，不需要宿主往返，天然覆盖所有工作区；空白占位与 subagent 子会话被排除，结果按最近更新排序。
+- 本会话内容由宿主读取已提交的会话日志，因此能搜到加载窗口之外的历史消息。宿主路由 `/dsh-simple-search/conversation` 与文件路由共用同一套信任栅栏，并限制扫描（5,000 条消息）、返回（200 条命中）与观察时间（8 秒），提取结果按日志 cursor 缓存。思考块、工具调用/结果与系统提示不会进入搜索面。
+- **从搜索面板插入 @ 文件引用**：在面板里选中文件名行或文件内的文本命中后按 `Alt+Enter`，该文件作为原生 DSH `@路径` 引用插入当前会话输入框（含空格的路径写作 `@"路径"`），面板关闭、焦点回到输入框。插入时光标位置来自会话输入框公开的 `inputActions`（`captureInsertion`，经 `conversation.input.overlay` 桥接），并走会话公开的输入面板，尊重草稿版本；没有打开的会话、或输入面板拒绝写入（草稿冻结、旧版 DSH）时改为复制 `@` 文本。该按键只存在于面板打开期间（面板自己的 keydown），不占用输入框的 `Shift+Enter` 换行。
+- 焦点在搜索框时，`Tab` / `Shift+Tab` 按「工作区文件 → 会话标题 → 本会话」循环切换（反向同理）；点击范围标签仍然有效。
+- 结果按文件分组并高亮命中文本；底部显示工作区根目录、命中/文件数量、引擎与耗时。
+- 外观支持**浅色 / 深色 / 跟随 DSH** 三选一：在「插件 → 简单搜索」详情页的「外观」卡片中设置，选择保存在浏览器 `localStorage`（`dsh-simple-search:appearance`）。「跟随 DSH」读取 DSH 当前实际色板（`body[data-ds-dark-theme]`，并订阅 `theme/change`），DSH 切换主题或系统色板翻转时自动跟随；浅色/深色则固定面板配色。两套色板都由面板内的 CSS 变量驱动，并设置对应的 `color-scheme`，让光标、选中与滚动条跟随。
+- 激活命中项（点击或 `Enter`）会打开文件**并关闭面板**。安装 better-sidebar 插件时，`Enter` 通过 `ctx.betterSidebar.openFile` 精确打开到行；其他部署会复制 `path:line`、显示短暂提示，稍后关闭。
 
-## Layout
+## 文件结构
 
-| File | Role |
+| 文件 | 作用 |
 |---|---|
-| `index.js` | Host half: loopback routes `/dsh-simple-search/version`, `/dsh-simple-search/search` (`mode=text|files|all`) and `/dsh-simple-search/conversation`, workspace/session root resolution, browser-trust fence. |
-| `search.js` | Testable search core: ripgrep argv + parsing, fallback walk, skip list, matcher compilation, file listing and name ranking. |
-| `conversation.js` | Testable conversation core: human-visible extraction (human prompts + assistant text, no reasoning/tool traffic), in-session matching, excerpts and caps. |
-| `client.js` | Browser half: `shell.overlay` entry, double-Shift listener, scope switcher (Workspace / Sessions / This chat) with `Tab` cycling, panel-scoped `Alt+Enter` reference insertion with copy fallback, dialog, debounced requests, opening hits, read-only Chat anchor jump; the `conversation.input.overlay` bridge publishes the composer's public input actions, and the `plugins.bundle.config` entry renders the appearance card on the plugin's page. |
-| `tests/search.test.mjs` | `node --test` coverage for the search core. |
-| `tests/conversation.test.mjs` | `node --test` coverage for conversation extraction, thinking/tool exclusion, matching and caps. |
-| `tests/route.test.mjs` | `node --test` coverage for the fence, root resolution, session observation and response envelopes. |
-| `tests/client.test.mjs` | `node --test` coverage for the appearance preference, Follow DSH, panel palette resolution, scope switching and `Tab` cycling, title matching, message copying, `Alt+Enter` reference insertion and its copy fallback (VM plus fake React, no browser). |
+| `index.js` | 宿主半：回环路由 `/dsh-simple-search/version`、`/dsh-simple-search/search`（`mode=text|files|all`）与 `/dsh-simple-search/conversation`，工作区/会话根目录解析，浏览器信任栅栏。 |
+| `search.js` | 可测试的搜索核心：ripgrep 参数与解析、回退遍历、跳过表、匹配器编译、文件列表与文件名排序。 |
+| `conversation.js` | 可测试的会话核心：人类可见文本提取（人类 prompt + assistant 正文，排除思考与工具流量）、会话内匹配、摘录与上限。 |
+| `client.js` | 浏览器半：`shell.overlay` 入口、双击 Shift 监听、范围切换（工作区文件 / 会话标题 / 本会话）与 `Tab` 循环、面板内 `Alt+Enter` 引用插入（失败回退复制）、对话框、防抖请求、打开命中项、只读 Chat 锚点定位；`conversation.input.overlay` 桥接组件把会话输入框的公开 input actions 交给根浮层；`plugins.bundle.config` 入口提供插件详情页的外观卡片。 |
+| `tests/search.test.mjs` | 搜索核心的 `node --test` 覆盖。 |
+| `tests/conversation.test.mjs` | 会话提取、思考/工具排除、匹配与上限的 `node --test` 覆盖。 |
+| `tests/route.test.mjs` | 信任栅栏、根目录解析、会话观察与响应封装的 `node --test` 覆盖。 |
+| `tests/client.test.mjs` | 外观偏好、跟随 DSH、面板色板、范围切换与 `Tab` 循环、标题匹配、消息复制、`Alt+Enter` 引用插入与复制回退的 `node --test` 覆盖（VM + 假 React，无需浏览器）。 |
 
-The routes are read-only and refuse any root outside a registered workspace or
-the calling Session's working directory; the conversation route reads one
-Session through the host's `sessionQuery` service and never opens log files
-directly. All three sit behind the same browser-trust fence as the shipped local
-routes (loopback/`trustedHosts` Host, same-origin metadata,
-`connection.requestRejection`), so the page's own auth cookie is what authorizes
-a request. The fence **fails closed**: when the host's Connection service is
-missing or cannot reject requests, the routes answer `503 auth-unavailable`
-rather than serve workspace text to a caller whose identity cannot be verified.
-The plugin also declares `connection` in `inject`, so it does not mount at all
-in a deployment without host authentication.
+路由只读，并拒绝已注册工作区或调用会话工作目录之外的根目录；会话内容路由只通过宿主的 `sessionQuery` 服务读取一个会话，不直接打开日志文件。三条路由与官方本地路由共用同一套浏览器信任栅栏（回环/`trustedHosts` Host、同源元数据、`connection.requestRejection`），因此真正授权请求的是页面自身的 auth cookie。栅栏**默认拒绝（fail-closed）**：宿主没有 Connection 服务、或该服务无法拒绝请求时，路由一律返回 `503 auth-unavailable`，不会把工作区文本交给身份无法验证的调用方。插件同时在 `inject` 中声明了 `connection`，因此在没有宿主认证的部署里根本不会挂载。
 
-## Install
+## 安装
 
-The plugin is installed into a DSH `web` profile as the `dsh-simple-search`
-bundle; the profile links this directory, which stays the source of truth.
+插件以 `dsh-simple-search` bundle 形式安装到 DSH 的 `web` profile；profile 链接本目录，本目录始终是源码。
 
 ```sh
 npm run check
 ```
 
-`npm run check` runs the syntax checks, all `node:test` files, the six
-auth-fence scenarios, and `npm pack --dry-run`; CI runs the same command.
-After changing `client.js`, refresh the page so the new client module replaces
-the loaded one. Host-half changes (`index.js`, `search.js`) are not re-evaluated
-for a linked package (Node caches the module by its real path and HMR only
-evicts modules under the profile root): remove + install from a directory whose
-path changed, or restart the host.
+`npm run check` 会跑语法检查、全部 `node:test`、6 个认证栅栏场景和
+`npm pack --dry-run`；CI 使用同一条命令。修改 `client.js` 后刷新页面，新的客户端模块会替换已加载的旧模块。宿主半改动（`index.js`、`search.js`）不会对 link 安装的包重新求值（Node 按真实路径缓存模块，HMR 只清理 profile 根下的模块）：需要换一个目录名重新 remove + install，或重启宿主。
 
-## Verify
+## 验证
 
 ```sh
-# route registered and answering (401 without the page's auth cookie is expected)
+# 路由已注册并能响应（没有页面 auth cookie 时返回 401 属正常）
 curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-search/version'
 
-# reproducible auth-fence check: real HTTP, throwaway loopback server, fake host services
-npm run check:auth   # expects 6/6 and exit 0
+# 可复跑的认证栅栏检查：真实 HTTP、一次性回环服务器、假宿主服务
+npm run check:auth   # 期望 6/6，退出码 0
 
-# the live client registration
+# 客户端实时注册
 #   cordis_inspect_query Slots.listSubTree root=shell.overlay  → occupant "simple-search"
 ```
 
-`scripts/verify-auth-fence.mjs` mounts the real handlers and covers the branch a
-normal `dsh web` installation cannot reach: no `connection` service at all
-(`503 auth-unavailable`), a `null` service, a throwing check (`403`), an
-admitting session (`200`), a rejected one (`401`) and a cross-site request
-(`403`). It needs neither a running host nor a session cookie.
+`scripts/verify-auth-fence.mjs` 挂载真实 handler，覆盖正常 `dsh web` 到不了的分支：完全没有 `connection` 服务（`503 auth-unavailable`）、服务为 `null`、校验抛错（`403`）、会话被接纳（`200`）、未登录（`401`）与跨站请求（`403`）。不需要运行中的宿主，也不需要 cookie。
 
-Manual check: refresh the page, press Shift twice, type `RPC HTTP GET`, and
-press Enter on the first hit. Then switch the scope to **Sessions**, search for
-part of a chat title, and press Enter to open it (this can cross workspaces).
-Finally switch to **This chat**, search for a word from the recent conversation,
-and press Enter to jump to that message — thinking/tool text must not appear.
-Switching the Conversation view away from Chat should fall back to copy. Open
-**Plugins → Simple Search**, switch the *Appearance* card through Light / Dark /
-Follow DSH, and reopen the panel to confirm each palette; while *Follow DSH* is
-active, switching the DSH theme must update the panel immediately.
+手动验收：刷新页面，双击 Shift，输入 `RPC HTTP GET`，在第一个结果上按 Enter；再双击 Shift，按 `Tab` 依次切到「会话标题」「本会话」并确认再按 `Tab` 回到「工作区文件」；搜索一个文件名或代码片段，选中后按 `Alt+Enter`，确认输入框出现 `@` 引用、面板关闭且焦点回到输入框。随后切换到「会话标题」，搜索某个会话标题的一部分，按 Enter 打开该会话（可以跨工作区）；再切换到「本会话」，搜索最近对话里的一个词，按 Enter 定位到该条消息——思考过程与工具文本不应出现；把 Conversation View 切换到非 Chat 时应回退为复制。最后打开「插件 → 简单搜索」，在「外观」卡片中依次切换浅色 / 深色 / 跟随 DSH，再双击 Shift 确认面板配色与选项一致，DSH 切换主题时「跟随 DSH」应立即跟上。
 
-The **This chat** scope needs the new host route, so it only works after the host
-half is reloaded (renamed-directory reinstall or host restart). A refreshed page
-against a stale host answers with a route-not-found error.
+「本会话」依赖宿主新增的 `/dsh-simple-search/conversation` 路由，必须先重载宿主半（换目录名重装或重启宿主）；只刷新页面而宿主仍是旧模块时，该范围会报路由不存在。
 
-## Development
+## 开发
 
-Agent-facing rules, commands, and the module map start at [AGENTS.md](AGENTS.md).
-Architecture, security, the reload matrix, and decision records live under
-[docs/](docs/); reusable workflows are in `.agents/skills/`.
+面向 agent 的规则、命令和模块地图从 [AGENTS.md](AGENTS.md) 开始。架构、安全、重载矩阵与决策记录在 [docs/](docs/)；可复用流程在 `.agents/skills/`。
