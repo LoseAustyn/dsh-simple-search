@@ -65,7 +65,7 @@ curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-searc
 ```text
 Verified:
 - npm run check — 单测全绿, auth 6/6, pack 12 files
-- 版本路由返回 1.3.0（与 package.json 一致）
+- 版本路由返回 `<version>`（与 package.json 一致）
 
 Unverified:
 - 浏览器外观卡视觉（需用户刷新后确认）

@@ -7,7 +7,7 @@ how the project is developed.
 
 [简体中文](CHANGELOG.md)
 
-## [Unreleased]
+## [1.4.0] - 2026-11-23
 
 ### Added
 
