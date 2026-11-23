@@ -46,11 +46,15 @@ window.__ModuleLoader__.load({
 
     const ZH = {
       'meta.title': '简单搜索',
-      'meta.description': '双击 Shift 打开，按内容搜索工作区里的所有文件。',
+      'meta.description': '双击 Shift 搜索工作区文件；在会话输入中按 Alt+Enter 搜索并插入 @ 文件引用。',
       'dialog.title': '简单搜索',
       'search.placeholder': '搜索文本片段…',
       'search.placeholder.sessions': '搜索会话标题…',
       'search.placeholder.conversation': '搜索当前会话内容…',
+      'footer.reference': '引用',
+      'footer.scope': 'Tab 切换范围',
+      'notice.referenceCopied': '无法写入输入框，已复制 {target}',
+      'notice.noSessionReference': '没有打开的会话，已复制 {target}',
       'scope.workspace': '工作区文件',
       'scope.sessions': '会话标题',
       'scope.conversation': '本会话',
@@ -89,10 +93,6 @@ window.__ModuleLoader__.load({
       'state.empty': '没有匹配结果',
       'state.emptyHint': '换个关键词，或切换 Aa / .* 的匹配方式',
       'state.error': '搜索失败：{message}',
-      'footer.navigate': '↑↓ 选择',
-      'footer.open': 'Enter 打开',
-      'footer.openSession': 'Enter 打开会话',
-      'footer.copy': 'Enter 定位',
       'footer.close': 'Esc 关闭',
       'footer.truncated': '结果已截断',
       'footer.elapsed': '{ms} ms · {engine}',
@@ -126,11 +126,15 @@ window.__ModuleLoader__.load({
 
     const EN = {
       'meta.title': 'Simple Search',
-      'meta.description': 'Press Shift twice to search every file in the workspace by content.',
+      'meta.description': 'Press Shift twice to search workspace files; press Alt+Enter in a chat to search and insert an @ file reference.',
       'dialog.title': 'Simple Search',
       'search.placeholder': 'Search text…',
       'search.placeholder.sessions': 'Search session titles…',
       'search.placeholder.conversation': 'Search this chat…',
+      'footer.reference': 'reference',
+      'footer.scope': 'Tab switch scope',
+      'notice.referenceCopied': 'Could not write to the input; copied {target}',
+      'notice.noSessionReference': 'No chat is open; copied {target}',
       'scope.workspace': 'Workspace',
       'scope.sessions': 'Sessions',
       'scope.conversation': 'This chat',
@@ -169,10 +173,6 @@ window.__ModuleLoader__.load({
       'state.empty': 'No matches',
       'state.emptyHint': 'Try another query, or toggle Aa / .*',
       'state.error': 'Search failed: {message}',
-      'footer.navigate': '↑↓ select',
-      'footer.open': 'Enter open',
-      'footer.openSession': 'Enter open chat',
-      'footer.copy': 'Enter jump',
       'footer.close': 'Esc close',
       'footer.truncated': 'Results truncated',
       'footer.elapsed': '{ms} ms · {engine}',
@@ -561,6 +561,67 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The `@` mention text for one workspace-relative path, or null when the
+     * editor grammar cannot represent it. Whitespace uses the quoted
+     * `@"path"` form, matching DSH's own file mentions; control characters
+     * and quotes would break the token, so such a path never becomes a
+     * reference (the caller copies it instead).
+     * @param {string} path - workspace-relative path.
+     * @returns {string|null} mention text.
+     */
+    function fileMentionText(path) {
+      if (typeof path !== 'string' || path === '') return null
+      if (/[\u0000-\u001f\u007f-\u009f"]/u.test(path)) return null
+      return /\s/u.test(path) ? `@"${path}"` : `@${path}`
+    }
+
+    /**
+     * Resolve the resident composer input facade for one Session through the
+     * public conversation service. The facade owns the draft revision an
+     * insertion is CAS'd against and can refocus the composer afterwards.
+     * @param {object} ctx - client context.
+     * @param {string} sessionId - Session id.
+     * @returns {object|null} input facade, or null when unavailable.
+     */
+    function sessionInputOf(ctx, sessionId) {
+      try {
+        const scope = ctx.get('sessions')?.scope?.(sessionId)
+        if (scope === undefined || scope === null) return null
+        const input = ctx.get('conversation')?.input
+        if (input === undefined || input === null || typeof input.for !== 'function') return null
+        return input.for(scope) ?? null
+      } catch {
+        return null
+      }
+    }
+
+    /**
+     * Publish one Session composer's public input actions to the root overlay.
+     *
+     * The overlay lives in `shell.overlay` and cannot resolve a Session-scoped
+     * slot prop on its own; `captureInsertion()` is what tells the reference
+     * picker where the caret sits. The write happens during render so the map
+     * is populated before any keystroke can read it — the bridge owns no
+     * state, and unmount removes only its own entry.
+     * @param {Map<string, object>} composerActions - Session id → input actions.
+     * @returns {Function} Session-scoped slot component rendering nothing.
+     */
+    function createComposerBridge(composerActions) {
+      return function ComposerBridge(props) {
+        const sessionId = typeof props.sessionId === 'string' ? props.sessionId : ''
+        const actions = props.inputActions
+        if (sessionId !== '' && actions !== undefined && actions !== null) {
+          composerActions.set(sessionId, actions)
+        }
+        useEffect(() => () => {
+          if (sessionId === '' || composerActions.get(sessionId) !== actions) return
+          composerActions.delete(sessionId)
+        }, [sessionId, actions])
+        return null
+      }
+    }
+
+    /**
      * Appearance card rendered on the bundle's page in Plugin Manager
      * (`plugins.bundle.config`, keyed by the bundle package name). The three
      * choices write the same browser-local preference the panel reads.
@@ -898,9 +959,11 @@ window.__ModuleLoader__.load({
     /**
      * Build the overlay component for one client context.
      * @param {object} ctx - client cordis context.
+     * @param {Map<string, object>} composerActions - Session composer input actions
+     *   published by the companion bridge slot.
      * @returns {Function} React component.
      */
-    function createOverlay(ctx) {
+    function createOverlay(ctx, composerActions) {
       /**
        * Copy text without failing the interaction.
        * @param {string} text - text to copy.
@@ -1213,6 +1276,66 @@ window.__ModuleLoader__.load({
         }, [data, mode])
 
         /**
+         * Insert one file as an @ reference into the current Session's
+         * composer.
+         *
+         * The verb is scoped to the open panel: this key handler exists only
+         * while the panel is mounted, so the composer keeps all its own keys
+         * (Shift+Enter stays a newline). The caret span is captured at pick
+         * time — the composer is not focused, so `captureInsertion` answers
+         * the last selection (or the document end) with the current
+         * `draftRev`. When the insertion cannot land (no open chat, no input
+         * facade, a frozen draft), the mention text is copied instead of
+         * losing the pick.
+         * @param {string} path - workspace-relative file path.
+         * @returns {boolean} whether the composer accepted the reference.
+         */
+        const insertFileReference = useCallback((path) => {
+          const mention = fileMentionText(path)
+          if (mention === null) {
+            showNotice(t('notice.copyFailed', { target: path }))
+            return false
+          }
+          const sessionId = currentSessionId(ctx, sessionListRef.current)
+          if (sessionId === null) {
+            void copyText(mention).then((copied) => {
+              showNotice(t(copied ? 'notice.noSessionReference' : 'notice.copyFailed', { target: mention }))
+            })
+            return false
+          }
+          const actions = composerActions.get(sessionId)
+          let span = null
+          try {
+            span = actions?.captureInsertion?.() ?? null
+          } catch {
+            span = null
+          }
+          const input = sessionInputOf(ctx, sessionId)
+          const name = basename(path)
+          if (input !== null && span !== null && typeof input.insertReference === 'function') {
+            try {
+              if (input.insertReference({
+                source: 'reference',
+                ref: mention,
+                label: name === '' ? path : name,
+                appearance: 'file',
+                clipboardText: mention,
+              }, span)) {
+                close()
+                if (typeof input.focus === 'function') input.focus()
+                return true
+              }
+            } catch {
+              // An older DSH without the insertion face falls back to copying.
+            }
+          }
+          void copyText(mention).then((copied) => {
+            showNotice(t(copied ? 'notice.referenceCopied' : 'notice.copyFailed', { target: mention }))
+          })
+          return false
+        }, [composerActions, ctx, close, showNotice, t])
+
+        /**
          * Open one hit: the side card editor when available, otherwise copy the
          * `path:line` reference so the result is still useful.
          * @param {{path: string, line: number}} hit - selected match.
@@ -1338,9 +1461,17 @@ window.__ModuleLoader__.load({
             return
           }
           if (event.key === 'Enter') {
-            event.preventDefault()
             const row = rows[active]
             if (row === undefined) return
+            if (event.altKey === true) {
+              // Alt+Enter is the panel's reference verb: it exists only while
+              // the panel is open, so the composer's own keys never change.
+              if (row.kind !== 'file' && row.kind !== 'text') return
+              event.preventDefault()
+              insertFileReference(row.kind === 'file' ? row.file.path : row.hit.path)
+              return
+            }
+            event.preventDefault()
             if (row.kind === 'file') openFileRow(row.file)
             else if (row.kind === 'session') openSessionRow(row.session)
             else if (row.kind === 'message') openMessage(row.hit)
@@ -1348,8 +1479,14 @@ window.__ModuleLoader__.load({
             return
           }
           if (event.key === 'Tab') {
+            // Tab cycles the three scopes instead of leaving the field: the
+            // scope row is the panel's primary switch, and Tab is the one
+            // navigation key the result list does not already use.
             event.preventDefault()
-            inputRef.current?.focus()
+            const step = event.shiftKey === true ? -1 : 1
+            const index = SCOPES.findIndex(([value]) => value === scope)
+            setScope(SCOPES[(index + step + SCOPES.length) % SCOPES.length][0])
+            setActive(0)
           }
         }
 
@@ -1594,9 +1731,10 @@ window.__ModuleLoader__.load({
                 : null),
             h('div', { className: 'gs-footer' },
               h('span', { className: 'gs-hints' },
-                h('span', { className: 'gs-hint' }, h('span', { className: 'gs-key' }, '↑'), h('span', { className: 'gs-key' }, '↓'), t('footer.navigate')),
-                h('span', { className: 'gs-hint' }, h('span', { className: 'gs-key' }, 'Enter'),
-                  t(scope === 'conversation' ? 'footer.copy' : scope === 'sessions' ? 'footer.openSession' : 'footer.open')),
+                scope === 'workspace'
+                  ? h('span', { className: 'gs-hint' }, h('span', { className: 'gs-key' }, 'Alt+Enter'), t('footer.reference'))
+                  : null,
+                h('span', { className: 'gs-hint' }, h('span', { className: 'gs-key' }, 'Tab'), t('footer.scope')),
                 h('span', { className: 'gs-hint' }, h('span', { className: 'gs-key' }, 'Esc'), t('footer.close'))),
               h('span', { className: 'gs-spacer' }),
               scope === 'workspace' && data !== null
@@ -1648,13 +1786,24 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'locale'],
       apply(ctx) {
+        /** Session id → the public composer input actions of that Session. */
+        const composerActions = new Map()
         ctx.effect(() => ctx.locale.register(NS, { zh: ZH, en: EN }), 'dsh-simple-search: dictionaries')
         ctx.effect(() => ctx.slots.inject('shell.overlay', () => ctx.slots.register({
           name: 'shell.overlay',
           id: 'simple-search',
           order: 60,
           locale: NS,
-        }, createOverlay(ctx))), 'dsh-simple-search: overlay')
+        }, createOverlay(ctx, composerActions))), 'dsh-simple-search: overlay')
+        // The root overlay needs the Session composer's caret span for an @
+        // reference insertion; this Session-scoped bridge is the public
+        // channel that carries it (the same `inputActions` every session
+        // slot receives).
+        ctx.effect(() => ctx.slots.inject('conversation.input.overlay', () => ctx.slots.register({
+          name: 'conversation.input.overlay',
+          id: 'simple-search-composer',
+          order: 40,
+        }, createComposerBridge(composerActions))), 'dsh-simple-search: composer bridge')
         // `follow` resolves to the DSH theme's effective scheme. The theme
         // event covers preference switches and OS flips; the body attribute
         // keeps it current in deployments without the theme service.

@@ -39,7 +39,7 @@ node --test --test-name-pattern 'version' tests/route.test.mjs
 | `index.js` | 路由、信任栅栏、根解析、会话观察、响应 envelope | 搜索算法、会话文本提取 |
 | `search.js` | rg/walk、排序、匹配、限制、跳过表、`SearchError` | HTTP、ctx、DOM |
 | `conversation.js` | 人类可见消息提取（排除思考/工具）、会话内匹配、摘录、会话上限 | HTTP、ctx、文件系统 |
-| `client.js` | 浮层、双击 Shift、范围切换、对话框、外观卡、fetch、Chat 锚点定位（只读） | 宿主认证、文件系统、跨工作区标题索引、修改 Chat DOM |
+| `client.js` | 浮层、双击 Shift、面板内 `Alt+Enter` 引用插入、Tab 范围循环、对话框、外观卡、fetch、`@` 引用插入（走会话公开输入面板）、Chat 锚点定位（只读） | 宿主认证、文件系统、跨工作区标题索引、修改 Chat DOM 或输入框 DOM |
 | `tests/*.mjs` | 单元、路由、客户端测试 | 真实浏览器 |
 | `scripts/verify-auth-fence.mjs` | 真实 loopback HTTP 认证集成 | 运行中的 DSH |
 
@@ -50,7 +50,7 @@ node --test --test-name-pattern 'version' tests/route.test.mjs
 | 宿主路由、认证、根解析 | `docs/SECURITY.md` | `route.test.mjs` + `npm run check:auth` | 换目录名重装或重启宿主；`/dsh-simple-search/version` 的版本/`pid` 变化 |
 | 搜索核心、限制、排序 | `docs/ARCHITECTURE.md` | `search.test.mjs` | 同上（宿主半） |
 | 会话提取、思考/工具排除、会话上限 | `docs/ARCHITECTURE.md`、`docs/SECURITY.md` | `conversation.test.mjs` | 同上（宿主半） |
-| `client.js`、范围切换、外观、交互 | `docs/DEVELOPMENT.md` | `client.test.mjs` | 刷新页面；双击 Shift、范围切换与外观卡人工确认 |
+| `client.js`、范围切换、外观、交互 | `docs/DEVELOPMENT.md` | `client.test.mjs` | 刷新页面；双击 Shift、Tab 范围循环、面板内 Alt+Enter 引用插入与外观卡人工确认 |
 | 清单、locale、图标 | `docs/DEVELOPMENT.md` | `npm run check:pack` | 重装 + 刷新；插件页标题/图标 |
 | 仅 docs/tests/scripts | 对应文档 | 受影响命令 | 无需重载 |
 

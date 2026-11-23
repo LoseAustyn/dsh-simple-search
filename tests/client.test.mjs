@@ -39,22 +39,28 @@ function createStorage(initial = {}, faults = {}) {
  * Fake React that renders plain trees and replays hook initial state. The
  * components under test never need an update cycle: a test re-invokes the
  * component after changing the store, which is exactly what a re-render sees.
+ * State setters are recorded so a test can assert what a key handler wrote.
  * @param {{stateOverrides?: Record<number, unknown>}} [options] - force the
  *   initial value of the n-th `useState` call (0-based).
- * @returns {object} the React surface the client module destructures.
+ * @returns {object} the React surface the client module destructures plus the
+ *   recorded `updates` (`{ index, value }`).
  */
 function createReact(options = {}) {
   const overrides = options.stateOverrides ?? {}
+  const updates = []
   let calls = 0
   return {
+    updates,
     createElement(type, props, ...children) {
       return { type, props: { ...(props ?? {}), children: children.length <= 1 ? children[0] : children } }
     },
     useState(initial) {
       const index = calls
       calls += 1
-      if (Object.hasOwn(overrides, index)) return [overrides[index], () => {}]
-      return [typeof initial === 'function' ? initial() : initial, () => {}]
+      const value = Object.hasOwn(overrides, index)
+        ? overrides[index]
+        : (typeof initial === 'function' ? initial() : initial)
+      return [value, (next) => { updates.push({ index, value: next }) }]
     },
     useEffect() {},
     useRef(initial) { return { current: initial } },
@@ -67,7 +73,7 @@ function createReact(options = {}) {
 /**
  * Load the page module and expose its plugin definition.
  * @param {{storage?: object, bodyDark?: boolean, stateOverrides?: Record<number, unknown>}} [options] - harness inputs.
- * @returns {{plugin: object, React: object, storage: object}} loaded module pieces.
+ * @returns {{plugin: object, React: object, storage: object, clipboard: object}} loaded module pieces.
  */
 function loadPlugin(options = {}) {
   const storage = options.storage ?? createStorage()
@@ -149,6 +155,7 @@ function setup(options = {}) {
       if (name === 'uiSession') return options.uiSession
       if (name === 'uiWorkspace') return options.uiWorkspace
       if (name === 'betterSidebar') return options.betterSidebar
+      if (name === 'conversation') return options.conversation
       return undefined
     },
     on(event, listener) {
@@ -184,6 +191,7 @@ function setup(options = {}) {
     registrations,
     overlay: registrations.find(entry => entry.registration.name === 'shell.overlay'),
     settings: registrations.find(entry => entry.registration.name === 'plugins.bundle.config'),
+    bridge: registrations.find(entry => entry.registration.name === 'conversation.input.overlay'),
     emitTheme(scheme) {
       for (const listener of [...themeListeners]) listener(fakeTheme(scheme).getTheme())
     },
@@ -644,6 +652,226 @@ describe('search scopes', () => {
     assert.equal(dicts.zh['state.conversationEmpty'], '当前会话里没有匹配的消息')
     assert.equal(dicts.en['message.role.assistant'], 'Assistant')
     assert.equal(dicts.zh['message.reveal'], '定位到这条消息')
-    assert.equal(dicts.en['footer.copy'], 'Enter jump')
+  })
+})
+
+describe('keyboard shortcuts and file references', () => {
+  /** The open panel's search field and the panel node that owns navigation. */
+  function panelParts(harness) {
+    const tree = harness.overlay.component({ t: translate })
+    const input = findAll(tree, node => node.props?.className === 'gs-input')[0]
+    input.props.ref.current = input
+    const panel = findAll(tree, node => node.props?.className === 'gs-panel')[0]
+    return { tree, input, panel }
+  }
+
+  /** Workspace data state with file-name and/or text hits. */
+  function fileData(files, matches = []) {
+    return {
+      root: '/workspace',
+      sessionId: 'session-a',
+      files,
+      matches,
+      fileCount: files.length,
+      matchCount: matches.length,
+      textFileCount: files.length + matches.length,
+      elapsedMs: 4,
+      engine: 'rg',
+    }
+  }
+
+  /** One retained Session plus the composer facade its reference lands on. */
+  function sessionHarness(options = {}) {
+    const snapshot = sessionSnapshot([
+      { id: 'session-a', title: 'Chat', cwd: '/workspace', updatedAt: 1, mainView: true },
+    ])
+    return setup({
+      sessions: { ...fakeSessions(snapshot), scope: () => ({}) },
+      uiSession: { adapter: { current: { getSnapshot: () => ({ key: 'session-a' }) } } },
+      ...options,
+    })
+  }
+
+  it('cycles the three scopes with Tab and wraps backwards with Shift+Tab', () => {
+    const forward = setup({ stateOverrides: { 1: true, 2: 'workspace' } })
+    const forwardParts = panelParts(forward)
+    let prevented = 0
+    forwardParts.panel.props.onKeyDown({
+      key: 'Tab',
+      shiftKey: false,
+      target: forwardParts.input,
+      preventDefault() { prevented += 1 },
+    })
+    assert.equal(prevented, 1)
+    assert.deepEqual(
+      forward.React.updates.filter(update => update.index === 2).map(update => update.value),
+      ['sessions'],
+    )
+
+    const backward = setup({ stateOverrides: { 1: true, 2: 'workspace' } })
+    const backwardParts = panelParts(backward)
+    backwardParts.panel.props.onKeyDown({
+      key: 'Tab',
+      shiftKey: true,
+      target: backwardParts.input,
+      preventDefault() {},
+    })
+    assert.deepEqual(
+      backward.React.updates.filter(update => update.index === 2).map(update => update.value),
+      ['conversation'],
+    )
+  })
+
+  it('inserts the highlighted file with Alt+Enter and returns to the composer', () => {
+    const inserted = []
+    const facade = {
+      focused: false,
+      insertReference(reference, span) {
+        inserted.push({ reference, span })
+        return true
+      },
+      focus() { this.focused = true },
+    }
+    const harness = sessionHarness({
+      conversation: { input: { for: () => facade } },
+      stateOverrides: {
+        1: true,
+        2: 'workspace',
+        3: 'app',
+        7: 'ready',
+        8: fileData([{ path: 'src/app.js', name: 'app.js', dir: 'src' }]),
+      },
+    })
+    harness.bridge.component({
+      sessionId: 'session-a',
+      inputActions: { captureInsertion: () => ({ start: 14, end: 14, draftRev: 7 }) },
+    })
+    const { input, panel } = panelParts(harness)
+    let prevented = 0
+    panel.props.onKeyDown({
+      key: 'Enter',
+      altKey: true,
+      target: input,
+      preventDefault() { prevented += 1 },
+    })
+    assert.equal(prevented, 1)
+    assert.equal(inserted.length, 1)
+    // The insertion object is created inside the page realm, so compare
+    // structurally rather than by prototype.
+    assert.deepEqual({ ...inserted[0].reference }, {
+      source: 'reference',
+      ref: '@src/app.js',
+      label: 'app.js',
+      appearance: 'file',
+      clipboardText: '@src/app.js',
+    })
+    assert.deepEqual(inserted[0].span, { start: 14, end: 14, draftRev: 7 })
+    assert.equal(facade.focused, true)
+    assert.equal(harness.React.updates.some(update => update.index === 1 && update.value === false), true)
+  })
+
+  it('references the file behind a text hit with Alt+Enter', () => {
+    const inserted = []
+    const facade = {
+      insertReference(reference, span) {
+        inserted.push({ reference, span })
+        return true
+      },
+      focus() {},
+    }
+    const harness = sessionHarness({
+      conversation: { input: { for: () => facade } },
+      stateOverrides: {
+        1: true,
+        2: 'workspace',
+        3: 'needle',
+        4: 'text',
+        7: 'ready',
+        8: fileData([], [{
+          path: 'src/app.js', line: 3, column: 2, text: 'needle here', name: 'app.js',
+        }]),
+      },
+    })
+    harness.bridge.component({
+      sessionId: 'session-a',
+      inputActions: { captureInsertion: () => ({ start: 0, end: 0, draftRev: 2 }) },
+    })
+    const { input, panel } = panelParts(harness)
+    panel.props.onKeyDown({ key: 'Enter', altKey: true, target: input, preventDefault() {} })
+    assert.equal(inserted.length, 1)
+    assert.equal(inserted[0].reference.ref, '@src/app.js')
+    assert.equal(inserted[0].reference.clipboardText, '@src/app.js')
+  })
+
+  it('copies the mention when no chat is open', async () => {
+    const harness = setup({
+      stateOverrides: {
+        1: true,
+        2: 'workspace',
+        3: 'app',
+        7: 'ready',
+        8: fileData([{ path: 'src/app.js', name: 'app.js', dir: 'src' }]),
+      },
+    })
+    const { input, panel } = panelParts(harness)
+    let prevented = 0
+    panel.props.onKeyDown({
+      key: 'Enter',
+      altKey: true,
+      target: input,
+      preventDefault() { prevented += 1 },
+    })
+    await new Promise((resolve) => { setImmediate(resolve) })
+    assert.equal(prevented, 1)
+    assert.equal(harness.clipboard.text, '@src/app.js')
+    assert.equal(
+      harness.React.updates.some(update => update.index === 11
+        && String(update.value).startsWith('notice.noSessionReference')),
+      true,
+    )
+  })
+
+  it('leaves session rows alone when Alt+Enter marks a reference', () => {
+    const snapshot = sessionSnapshot([
+      { id: 'session-alpha', title: 'Alpha plan', cwd: '/home/chen/projects/alpha', updatedAt: 200 },
+    ])
+    const opened = []
+    const harness = setup({
+      sessions: fakeSessions(snapshot),
+      uiWorkspace: { openSession: (id) => opened.push(id) },
+      stateOverrides: { 1: true, 2: 'sessions', 3: 'alpha', 12: snapshot },
+    })
+    const { input, panel } = panelParts(harness)
+    let prevented = 0
+    panel.props.onKeyDown({
+      key: 'Enter',
+      altKey: true,
+      target: input,
+      preventDefault() { prevented += 1 },
+    })
+    assert.equal(prevented, 0)
+    assert.deepEqual(opened, [])
+  })
+
+  it('shows only the shortcuts that are not self-evident', () => {
+    const keysOf = (tree) => findAll(tree, node => node.props?.className === 'gs-hint')
+      .map(hint => findAll(hint, node => node.props?.className === 'gs-key')
+        .map(key => key.props.children)
+        .join('+'))
+    const workspace = setup({ stateOverrides: { 1: true, 2: 'workspace' } })
+    assert.deepEqual(keysOf(panelParts(workspace).tree), ['Alt+Enter', 'Tab', 'Esc'])
+    const sessions = setup({ stateOverrides: { 1: true, 2: 'sessions' } })
+    assert.deepEqual(keysOf(panelParts(sessions).tree), ['Tab', 'Esc'])
+  })
+
+  it('publishes the reference strings in both dictionaries', () => {
+    const harness = setup()
+    const dicts = harness.dictionaries.simpleSearch
+    assert.equal(dicts.zh['footer.reference'], '引用')
+    assert.equal(dicts.en['footer.reference'], 'reference')
+    assert.equal(dicts.zh['footer.scope'], 'Tab 切换范围')
+    assert.equal(dicts.en['footer.scope'], 'Tab switch scope')
+    assert.equal(dicts.zh['notice.noSessionReference'], '没有打开的会话，已复制 {target}')
+    assert.equal(dicts.en['notice.referenceCopied'], 'Could not write to the input; copied {target}')
   })
 })

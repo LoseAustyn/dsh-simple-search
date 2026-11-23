@@ -21,8 +21,13 @@ JetBrains-style **Simple Search** box with three scopes:
   Chat view (loading older history when needed); if no Chat anchor is available
   it copies the full message instead.
 
-`↑`/`↓` move through the hits and `Esc` closes. Opening the panel selects the
-previous query, so typing or pasting replaces it.
+`↑`/`↓` move through the hits, `Tab` / `Shift+Tab` cycle the three scopes,
+and `Esc` closes. Opening the panel selects the previous query, so typing or
+pasting replaces it.
+
+With a chat open, highlight a file (or a text hit inside one) in the panel and
+press **`Alt+Enter`** to insert that file as a native DSH `@` reference into the
+chat input; the panel closes and focus returns to the composer.
 
 ## What it does
 
@@ -52,6 +57,19 @@ previous query, so typing or pasting replaces it.
   observation (8 s), and caches the extraction per log cursor. Reasoning blocks
   ("thinking"), tool calls/results and system prompts never enter the search
   surface.
+- **@ file references from the panel**: highlight a file-name row, or a text
+  hit inside a file, and press `Alt+Enter`: the file is inserted as a native
+  DSH `@path` reference (`@"path with spaces"` for paths with whitespace) into
+  the current chat's input, the panel closes, and focus returns to the composer.
+  The caret span comes from the Session composer's public `inputActions`
+  (`captureInsertion`) through a `conversation.input.overlay` bridge; insertion
+  goes through the Session's public input facade, so the draft revision is
+  honored. When no chat is open, or the composer refuses the edit (a frozen
+  draft, an older DSH), the mention text is copied instead. The verb lives in
+  the panel's own key handler, so it exists only while the panel is open —
+  `Shift+Enter` in the composer remains DSH's newline shortcut.
+- `Tab` / `Shift+Tab` cycle Workspace → Sessions → This chat (and back) while
+  the search field has focus; clicking a scope tab still works.
 - Results group per file with the matched text highlighted; the footer shows the
   workspace root, hit/file counts, engine, and elapsed time.
 - Appearance is a three-way choice — **Light / Dark / Follow DSH** — on the
@@ -73,11 +91,11 @@ previous query, so typing or pasting replaces it.
 | `index.js` | Host half: loopback routes `/dsh-simple-search/version`, `/dsh-simple-search/search` (`mode=text|files|all`) and `/dsh-simple-search/conversation`, workspace/session root resolution, browser-trust fence. |
 | `search.js` | Testable search core: ripgrep argv + parsing, fallback walk, skip list, matcher compilation, file listing and name ranking. |
 | `conversation.js` | Testable conversation core: human-visible extraction (human prompts + assistant text, no reasoning/tool traffic), in-session matching, excerpts and caps. |
-| `client.js` | Browser half: `shell.overlay` entry, double-Shift listener, scope switcher (Workspace / Sessions / This chat), dialog, debounced requests, opening hits, read-only Chat anchor jump with copy fallback; the `plugins.bundle.config` entry renders the appearance card on the plugin's page. |
+| `client.js` | Browser half: `shell.overlay` entry, double-Shift listener, scope switcher (Workspace / Sessions / This chat) with `Tab` cycling, panel-scoped `Alt+Enter` reference insertion with copy fallback, dialog, debounced requests, opening hits, read-only Chat anchor jump; the `conversation.input.overlay` bridge publishes the composer's public input actions, and the `plugins.bundle.config` entry renders the appearance card on the plugin's page. |
 | `tests/search.test.mjs` | `node --test` coverage for the search core. |
 | `tests/conversation.test.mjs` | `node --test` coverage for conversation extraction, thinking/tool exclusion, matching and caps. |
 | `tests/route.test.mjs` | `node --test` coverage for the fence, root resolution, session observation and response envelopes. |
-| `tests/client.test.mjs` | `node --test` coverage for the appearance preference, Follow DSH, panel palette resolution, scope switching, title matching and message copying (VM plus fake React, no browser). |
+| `tests/client.test.mjs` | `node --test` coverage for the appearance preference, Follow DSH, panel palette resolution, scope switching and `Tab` cycling, title matching, message copying, `Alt+Enter` reference insertion and its copy fallback (VM plus fake React, no browser). |
 
 The routes are read-only and refuse any root outside a registered workspace or
 the calling Session's working directory; the conversation route reads one

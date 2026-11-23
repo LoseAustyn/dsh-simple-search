@@ -8,8 +8,11 @@
 DSH 页面
 ├── client.js
 │   ├── shell.overlay          双击 Shift、搜索框、三个搜索范围、结果列表
+│   ├── conversation.input.overlay
+│   │   └── 桥接组件           把会话输入框的公开 inputActions 交给根浮层
 │   ├── plugins.bundle.config  插件详情页的外观卡
 │   ├── 会话标题搜索           在 ctx.sessions.list 快照上本地过滤（跨工作区）
+│   ├── 面板内 Alt+Enter 引用   captureInsertion → insertReference（原生 @ 引用）
 │   └── fetch(GET, same-origin)
 │         /dsh-simple-search/version
 │         /dsh-simple-search/search
@@ -34,7 +37,7 @@ DSH 页面
 | `index.js` | 导出 `name`、`inject=['webServer','connection']`、`apply(ctx)`；注册三条 exact 路由；返回 `{ok,value}` 或 `{ok:false,error:{code,message}}` | 不实现搜索算法，不读 DOM |
 | `search.js` | 导出限制常量、`SearchError`、匹配/排序/引擎函数、`searchWorkspace(request)` | 不依赖 `ctx`、HTTP、浏览器；不读环境 cwd 作为搜索根 |
 | `conversation.js` | 导出 `MAX_CONVERSATION_*`、`conversationDocuments(events)`、`matchConversation(extracted, request)`、`searchConversation(events, request)` | 纯函数；不依赖 `ctx`、HTTP、文件系统 |
-| `client.js` | `__ModuleLoader__.load({id:'dsh-simple-search', factory})`；注册 `shell.overlay` 与 `plugins.bundle.config`；`inject=['slots','locale']` | 不做宿主认证，不直接读文件系统；会话标题只读已加载的目录快照；消息定位只读 Chat 锚点，不修改 Chat DOM |
+| `client.js` | `__ModuleLoader__.load({id:'dsh-simple-search', factory})`；注册 `shell.overlay`、`conversation.input.overlay` 桥接组件与 `plugins.bundle.config`；`inject=['slots','locale']` | 不做宿主认证，不直接读文件系统；会话标题只读已加载的目录快照；消息定位只读 Chat 锚点，不修改 Chat DOM；@ 引用只走会话公开输入面板，不写输入框 DOM |
 | `tests/*.mjs` | `node:test` 行为测试；见 `tests/AGENTS.md` | 不依赖真实浏览器或运行中的 DSH |
 | `scripts/verify-auth-fence.mjs` | 真实 loopback HTTP 的认证集成，6 个场景 | 不依赖运行中的 DSH |
 
@@ -59,6 +62,15 @@ DSH 页面
 4. `conversationDocuments` 只保留 `user/message` 中 `source.kind === 'user'` 的事件与 `assistant/message` 的 `text` 块；`reasoning`（思考）、`tool-call`、`tool/result`、`system/developer` 与合成上下文全部丢弃。
 5. 提取结果按日志 `cursor` 缓存在宿主进程内（最多 3 个会话）；日志追加后 cursor 变化才重新提取。
 6. `matchConversation` 按最新消息优先匹配并生成单行摘录；返回 envelope。
+
+**面板内 Alt+Enter 引用**：
+
+1. 面板的 `onPanelKeyDown` 在焦点位于搜索框时识别 `Enter + Alt`；只有能表示成文件引用的行（文件名行、文本命中行）才处理，其他行不动作、也不阻止默认行为。
+2. 目标会话取当前主视图会话（`currentSessionId`）；光标位置来自会话 slot 的公开 `inputActions.captureInsertion()`。桥接组件（`conversation.input.overlay`，session scope）把该 actions 按会话 id 发布到模块级 Map；面板打开期间输入框不在焦点，`captureInsertion` 给出最后一次选择或文档末尾，并携带当前 `draftRev`。
+3. 通过 `ctx.get('sessions').scope(id)` + `ctx.get('conversation').input.for(scope)` 取得 `SessionInput`，调用 `insertReference({source:'reference', ref:'@path', appearance:'file', clipboardText:'@path'}, span)`；成功后关闭面板并 `focus()` 输入框。
+4. 含空白路径写成 `@"path"`；控制字符或引号无法被 DSH 的 mention 语法安全表示时拒绝。没有打开的会话、`insertReference` 返回 false（草稿冻结/版本不符）或没有输入面板服务时，把 `@path` 文本复制到剪贴板并提示。
+5. 该按键只存在于面板组件挂载期间（不注册 window 监听、不接管输入框），因此 `Shift+Enter` 与输入框的其他快捷键保持不变；面板内 `Shift+Enter` 与 `Enter` 一样激活当前行（单行输入框没有换行语义）。
+6. 文本命中插入的是文件引用（`@path`），不携带行号——DSH 的文件引用语法没有行号字段。
 
 **会话标题**不需要宿主路由：`ctx.sessions.list` 已经是跨工作区的目录快照。客户端按 `title`/`displayTitle`、工作区目录名、会话 id 做子串匹配，排除空白占位与 subagent 子会话，按 `updatedAt` 倒序；`Enter` 通过 `ctx.get('uiWorkspace').openSession(id)` 打开，没有该服务时退回复制会话 id。刷新面板会调用 `sessions.refresh()`，新会话与新标题由此进入目录。
 

@@ -5,6 +5,34 @@ All notable user-visible changes to `dsh-simple-search`. The format follows
 `package.json`. Agent-facing process changes are listed too when they affect
 how the project is developed.
 
+## [Unreleased]
+
+### Added
+
+- **@ file references from the panel**: highlight a file-name row, or a text hit
+  inside a file, and press `Alt+Enter`: the file is inserted as a native DSH
+  `@path` reference (quoted `@"path"` when the path has whitespace) into the
+  current chat's composer, the panel closes, and focus returns to the input.
+  A new Session-scoped `conversation.input.overlay` bridge publishes the
+  composer's public `inputActions` so the panel can capture the caret span;
+  insertion goes through the Session's public input facade (`insertReference`)
+  and respects the draft revision. When no chat is open, or the composer cannot
+  take the edit (frozen draft, older DSH), the mention text is copied instead.
+- **`Tab` scope cycling**: with the search field focused, `Tab` / `Shift+Tab`
+  cycle Workspace → Sessions → This chat (and back). The footer lists the new
+  key.
+
+### Changed
+
+- The reference verb lives in the panel's own key handler, so it exists only
+  while the panel is open. `Shift+Enter` and every other composer shortcut are
+  untouched; the panel's footer now lists `Alt+Enter reference` in the
+  Workspace scope.
+- Text hits reference their file (`@path`); DSH file references have no line
+  field, so the line is not part of the inserted reference.
+- The footer only hints the keys a user cannot guess — `Alt+Enter` reference,
+  `Tab` scope switching and `Esc` close; the `↑`/`↓` and `Enter` hints are gone.
+
 ## [1.3.0] - 2026-11-20
 
 ### Added

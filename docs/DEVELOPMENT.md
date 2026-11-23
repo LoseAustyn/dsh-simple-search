@@ -66,11 +66,13 @@ curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-searc
 浏览器：
 
 1. 刷新页面，双击 Shift；输入查询；切换 `工作区文件` 下的 `All` / `Files` / `Text`。
-2. `↑`/`↓` 移动，`Enter` 打开命中，`Esc` 关闭。
-3. 切到 `会话标题`：输入某个会话标题的一部分，结果应跨工作区列出；`Enter` 打开该会话。
-4. 切到 `本会话`：输入最近对话里的一个词，结果应只包含双方可见文字，不含思考过程、工具调用或系统提示；`Enter` 应滚动到 Chat 里的该条消息；如果把 Conversation View 切到非 Chat 或锚点不可用，应回退为复制并提示。
-5. **Plugins → Simple Search** → *Appearance*：Light / Dark / Follow DSH；切换后重开面板确认。
-6. Follow DSH 下切换 DSH 主题，面板应立即跟随。
+2. 焦点在搜索框时按 `Tab`：范围应依次切到「会话标题」「本会话」再回到「工作区文件」；`Shift+Tab` 反向。
+3. `↑`/`↓` 移动，`Enter` 打开命中，`Esc` 关闭。
+4. 切到 `会话标题`：输入某个会话标题的一部分，结果应跨工作区列出；`Enter` 打开该会话。
+5. 在面板里搜索一个文件名或代码片段，用 `↑`/`↓` 选中后按 `Alt+Enter`：输入框应出现原生 `@` 引用、面板关闭且焦点回到输入框；没有打开的会话时应改为复制 `@路径` 并提示。
+6. 切到 `本会话`：输入最近对话里的一个词，结果应只包含双方可见文字，不含思考过程、工具调用或系统提示；`Enter` 应滚动到 Chat 里的该条消息；如果把 Conversation View 切到非 Chat 或锚点不可用，应回退为复制并提示。
+7. **Plugins → Simple Search** → *Appearance*：Light / Dark / Follow DSH；切换后重开面板确认。
+8. Follow DSH 下切换 DSH 主题，面板应立即跟随。
 
 注意：`本会话` 依赖宿主新增的 `/dsh-simple-search/conversation` 路由。只刷新页面而宿主模块未重载时，该范围会报“路由不存在”一类错误；按上表重装/重启后再验收。
 
