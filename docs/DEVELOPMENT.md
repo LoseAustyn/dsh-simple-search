@@ -1,28 +1,28 @@
-# Development
+# 开发与调试指南
 
-本文件是安装、调试、验证的操作说明；改代码前的架构与安全约束见 `ARCHITECTURE.md`、`SECURITY.md`。
+本文档涵盖本地安装、调试、测试与验收流程；修改代码前请先阅读 `ARCHITECTURE.md` 和 `SECURITY.md`。
 
-## 前置
+## 环境要求
 
-- Node.js 24.x（与当前 DSH 运行时、CI 一致）。
-- 零运行时依赖；不需要 `npm install`。
-- 插件源码就是 profile 链接的目录；不要直接编辑 `~/.dsh/profiles/web` 里的副本。
+- Node.js 24.x（与当前 DSH 运行时和 CI 保持一致）。
+- 零运行时依赖，不需要执行 `npm install`。
+- Profile 通过 `link:` 直接指向本源码目录，改代码请在本仓库操作，不要直接编辑 `~/.dsh/profiles/web` 下的文件。
 
-## 技能发现
+## Skill 自动发现说明
 
-DSH 以当前会话 cwd 的最近 `.git` 祖先为 project root；本仓库自身是 Git 仓库，所以在 `simple-search/` 内工作时才会扫描 `.agents/skills/`。如果会话停在 `dsh-plugins/` 工作区根，先把 cwd 切到 `simple-search/`，或让子代理以该目录为 `cwd` 启动；否则 skill 目录存在但不会进入 catalog（AGENTS.md 仍会在读写该目录文件时加载）。
+DSH 会以当前会话工作目录最近的 `.git` 祖先目录作为项目根目录。本仓库自身是独立的 Git 仓库，只有在 `simple-search/` 目录内工作时，`.agents/skills/` 下的 skill 才会被自动扫描加入目录；如果会话停在上层 `dsh-plugins/` 根目录，需先切换工作目录或让子代理以 `simple-search/` 为 cwd 启动（`AGENTS.md` 不受影响，读写该目录下文件时会自动加载）。
 
-## 命令
+## 常用命令
 
 ```sh
-npm run check        # 语法 + 单测 + 认证栅栏 + 打包清单
-npm test             # 只跑单测
-npm run check:auth   # 真实 loopback HTTP 的认证栅栏 6 场景
-npm run check:pack   # 只检查 npm 包内容
-npm run check:syntax # 只做 node --check
+npm run check        # 语法检查 + 全部单测 + 鉴权集成检查 + 打包清单校验（提交前统一入口）
+npm test             # 仅运行单元测试
+npm run check:auth   # 启动临时本地 HTTP 服务，运行 6 个鉴权场景
+npm run check:pack   # 仅检查 npm pack 打包内容
+npm run check:syntax # 仅运行 node --check 语法检查
 ```
 
-单文件或单名称：
+运行单个测试文件或指定用例：
 
 ```sh
 node --test tests/route.test.mjs
@@ -31,66 +31,68 @@ node --test --test-name-pattern 'appearance' tests/client.test.mjs
 node --test tests/conversation.test.mjs
 ```
 
-`npm run check` 是提交前唯一入口；CI 跑同一命令。
+CI 与本地提交执行同一条 `npm run check`。
 
-## 安装与重载
+## 本地安装与重载
 
-源码目录通过 profile 的 `link:` 指向本仓库。安装/更新 bundle 时，用 `plugin_manager` 的 `install_bundle`，`target` 传本目录绝对路径；没有该工具时，在 **Plugins → Add plugin** 选择本地目录。只以返回 `application=applied` 且 `warnings=[]` 判定安装成功。
+本插件通过 profile 的 `link:` 挂载。安装或更新 bundle 时，可使用 `plugin_manager` 的 `install_bundle`（`target` 填本目录绝对路径），或在 DSH Web 的 **插件 → 添加插件** 中选择本地目录。以返回 `application=applied` 且 `warnings=[]` 作为安装成功标准。
 
-| 改动 | 生效方式 | 验证 |
+| 改动内容 | 生效方式 | 验证方式 |
 |---|---|---|
-| `index.js` / `search.js` / `conversation.js` | Node 按真实路径缓存 ESM；`link:` 包不会热更新。`remove_bundle` 后把目录改成新名字再 `install_bundle`，或重启宿主 | `/dsh-simple-search/version` 的 `version`/`pid` 变化；`npm run check:auth` |
-| `client.js` | 刷新页面加载新模块；若 `pnpm run dev:web` 在跑，客户端 bundle 可热替换 | 双击 Shift；三个搜索范围；插件详情页外观卡 |
-| `package.json` / `cordis.patch.yml` / `locale` / `icon.svg` | 重装 bundle + 刷新页面 | `install_bundle` 返回 applied、warnings 空；插件页标题/图标 |
-| `tests/` / `scripts/` | 无需重载 | 对应命令 |
+| `index.js` / `search.js` / `conversation.js` | Node.js 按真实路径缓存 ESM 模块，`link:` 本地包不会热更新。需先 `remove_bundle`、修改目录名后再 `install_bundle`，或直接重启宿主 | 核对 `/dsh-simple-search/version` 的 `version` / `pid` 变化；运行 `npm run check:auth` |
+| `client.js` | 刷新浏览器页面即可；若同时在运行 `pnpm run dev:web`，客户端 bundle 支持热替换 | 双击 `Shift` 测试三个搜索范围与插件详情页外观卡 |
+| `package.json` / `cordis.patch.yml` / `locale` / `icon.svg` | 重新安装 bundle 并刷新页面 | `install_bundle` 返回 `applied` 且 `warnings=[]`；检查插件页标题与图标 |
+| `tests/` / `scripts/` | 无需重载 | 运行对应检查命令 |
 
-宿主半改完只看测试通过不算生效：测试加载的是文件，页面加载的是宿主已缓存的模块；必须验证 `/version` 或重启。
+注意：服务端代码改完后，单测通过不代表页面已生效——测试直接加载磁盘文件，而页面访问的是宿主缓存的模块，务必确认 `/version` 或重启宿主。
 
-## 新增测试
+## 编写测试
 
-先读 `tests/AGENTS.md`。三种模式：
+开始前先读 `tests/AGENTS.md`。本仓库按三类场景组织测试：
 
-1. **纯核心**（`search.test.mjs`）：直接 import；临时目录用 `mkdtemp`，`after` 清理；不要 mock 文件系统。
-2. **路由**（`route.test.mjs`）：用 `fakeContext(services)` 捕获 handler，用 `call(handler, url, headers)` 直接调用；不监听端口。
-3. **客户端**（`client.test.mjs`）：`vm.runInNewContext` 执行 `client.js`，fake React/localStorage；不引入 jsdom。
+1. **纯核心模块**（`search.test.mjs`、`conversation.test.mjs`）：直接 import 模块；文件测试使用 `mkdtemp` 创建真实临时目录并在 `after` 中清理，不 mock 文件系统。
+2. **服务端路由**（`route.test.mjs`）：用 `fakeContext(services)` 捕获路由 handler，再通过 `call(handler, url, headers)` 直接调用，不监听端口。
+3. **浏览器端**（`client.test.mjs`）：用 `vm.runInNewContext` 加载 `client.js`，传入精简版 mock React 与 `localStorage`，不引入 jsdom。
 
-新增测试必须先证明能失败：修代码前跑一次，或临时回退断言。新增测试文件要加入 `package.json` 的 `test` 脚本。
+新增测试需先确认在代码修复前能够失败（修代码前跑一次，或临时改坏断言验证）。如有新增测试文件，记得加进 `package.json` 的 `test` 脚本。
 
-## 人工验收
+## 人工验收步骤
+
+先检查路由是否已注册：
 
 ```sh
 curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-search/version'
-# 无页面 cookie 时 401 正常；404 表示路由未注册
+# 无页面 cookie 时返回 401 属正常；404 表示路由未注册
 ```
 
-浏览器：
+再在浏览器中逐项确认：
 
-1. 刷新页面，双击 Shift；输入查询；切换 `工作区文件` 下的 `All` / `Files` / `Text`。
-2. 焦点在搜索框时按 `Tab`：范围应依次切到「会话标题」「本会话」再回到「工作区文件」；`Shift+Tab` 反向。
-3. `↑`/`↓` 移动，`Enter` 打开命中，`Esc` 关闭。
-4. 切到 `会话标题`：输入某个会话标题的一部分，结果应跨工作区列出；`Enter` 打开该会话。
-5. 在面板里搜索一个文件名或代码片段，用 `↑`/`↓` 选中后按 `Alt+Enter`：输入框应出现原生 `@` 引用、面板关闭且焦点回到输入框；没有打开的会话时应改为复制 `@路径` 并提示。
-6. 切到 `本会话`：输入最近对话里的一个词，结果应只包含双方可见文字，不含思考过程、工具调用或系统提示；`Enter` 应滚动到 Chat 里的该条消息；如果把 Conversation View 切到非 Chat 或锚点不可用，应回退为复制并提示。
-7. **Plugins → Simple Search** → *Appearance*：Light / Dark / Follow DSH；切换后重开面板确认。
-8. Follow DSH 下切换 DSH 主题，面板应立即跟随。
+1. 刷新页面，连按两次 `Shift` 呼出面板，输入关键词，在「工作区文件」下切换「全部 / 文件 / 文本」。
+2. 焦点在搜索框时按 `Tab`，确认依次切换「工作区文件 → 会话标题 → 本会话」并循环；`Shift+Tab` 反向切换。
+3. 使用 `↑`/`↓` 移动选中项，`Enter` 打开命中结果，`Esc` 关闭面板。
+4. 切到「会话标题」，输入任意会话标题片段，确认跨工作区列出结果，`Enter` 能正常打开该会话。
+5. 搜索一个文件名或代码片段，选中后按 `Alt+Enter`，确认原生 `@` 引用插入输入框、面板关闭且焦点回到输入框；在无打开会话时应回退复制 `@路径` 并给出提示。
+6. 切到「本会话」，输入近期对话中的词，确认结果只含双方可见文字（不含思考过程、工具调用或系统提示）；`Enter` 应定位并滚动到 Chat 视图中的该条消息；切到非 Chat 视图或锚点不可用时应回退复制并提示。
+7. 打开 **插件 → 简单搜索**，在「外观」卡片依次切换 **浅色 / 深色 / 跟随 DSH**，重开面板确认配色一致。
+8. 在「跟随 DSH」状态下切换 DSH 主题，确认面板配色立即跟随变化。
 
-注意：`本会话` 依赖宿主新增的 `/dsh-simple-search/conversation` 路由。只刷新页面而宿主模块未重载时，该范围会报“路由不存在”一类错误；按上表重装/重启后再验收。
+> 提示：「本会话」依赖服务端新增的 `/dsh-simple-search/conversation` 路由。若只刷新页面而未重载服务端模块，该范围会报路由不存在，请按上表重启或重装后再验收。
 
-没有浏览器控制时，以上只能写“待用户确认”，不能写成已通过。
+在没有真实浏览器验证手段时，以上人工项只能标为「待用户确认」，不得写成已通过。
 
-## 常见问题
+## 常见问题排查
 
-- **`/version` 404**：bundle 未注册或路由前缀不一致；检查 `cordis.patch.yml` 与 `index.js`。
-- **`/version` 401**：路由已注册，但请求没有页面认证 cookie；这是预期。
-- **版本还是旧的**：宿主半模块被缓存；按上表重装/重启。
-- **出现两个面板**：旧 slot id 或旧 bundle 残留；移除旧 bundle 后刷新。
-- **`engine=walk`**：`@vscode/ripgrep` 未解析到且 `PATH` 没有 `rg`；功能可用，结果可能更慢。可用 `DSH_SIMPLE_SEARCH_RG` 指定二进制。
-- **搜索不到子仓内容**：这是 `--no-ignore-vcs` 的有意行为；若仍缺失，检查 `SKIP_DIR_NAMES` 与目标目录名。
-- **`本会话` 提示宿主未提供会话查询服务**：profile 没有挂载 `sessionQuery`（DSH 的 base bundle 默认挂载）。确认宿主 bundle 组成后重启；插件不会退化成直接读会话文件。
-- **`本会话` 提示当前没有打开的会话**：主视图没有选中会话。先在侧栏打开一个会话；subagent 子会话页不提供该范围。
-- **会话标题搜不到某个会话**：空白占位与 subagent 子会话被有意排除；刚创建/改名的会话需要目录刷新（打开面板会触发 `sessions.refresh()`）。
-- **`本会话` 返回 504**：读取会话日志超过 8 秒；通常是超长会话或磁盘慢，重试即可，不会无界扫描。
+- **`/version` 返回 404**：bundle 未注册或路由前缀不一致，检查 `cordis.patch.yml` 与 `index.js`。
+- **`/version` 返回 401**：路由已注册，只是 `curl` 未携带页面登录 cookie，属于预期行为。
+- **版本号未更新**：Node.js 缓存了旧版服务端模块，按上表重启或改目录名重装。
+- **页面出现两个搜索面板**：存在旧 slot ID 或残留旧 bundle，移除旧 bundle 后刷新页面。
+- **底部显示 `engine=walk`**：未找到 `@vscode/ripgrep` 且 `PATH` 中无 `rg`，已自动回退到 Node 遍历；功能正常但速度较慢，可通过环境变量 `DSH_SIMPLE_SEARCH_RG` 指定 `rg` 路径。
+- **搜不到子仓库文件**：插件默认开启 `--no-ignore-vcs` 不受 `.gitignore` 影响；若仍搜不到，检查目录名是否命中了 `SKIP_DIR_NAMES`。
+- **「本会话」提示未提供会话查询服务**：当前 profile 未挂载 `sessionQuery`（DSH base bundle 默认包含）。检查 profile 配置并重启，插件不会降级为直接读取会话文件。
+- **「本会话」提示当前无打开会话**：主视图未选中任何会话，先在侧栏打开一个会话（subagent 子会话页不支持该范围）。
+- **「会话标题」搜不到某个会话**：空白占位会话和 subagent 子会话被主动排除；刚新建或改名的会话需等待目录刷新（打开面板会自动调用 `sessions.refresh()`）。
+- **「本会话」返回 504**：读取会话日志超过 8 秒超时上限，多见于超长会话或磁盘较慢，重试即可。
 
-## 发布
+## 发布说明
 
-见 `.agents/skills/simple-search-release/SKILL.md`；变更日志写 `CHANGELOG.md`（中文默认）与 `CHANGELOG.en.md`（英文），两版同一次改动里同步。当前包是 `private: true`，安装方式是 profile `link:`；若要发 npm，先按决策记录改分发方式。
+完整发布流程见 `.agents/skills/simple-search-release/SKILL.md`。变更日志同步维护在 `CHANGELOG.md`（中文）与 `CHANGELOG.en.md`（英文）。当前包为 `private: true`，通过 profile `link:` 本地安装；如后续计划发布至 npm，需先单独决策分发方式。

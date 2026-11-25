@@ -3,92 +3,92 @@ name: simple-search-verify
 description: "Use before claiming dsh-simple-search work is done, committing, pushing, or reviewing a change; selects the smallest evidence for the touched surface and reports verified, unverified, and blocked items separately."
 ---
 
-# Simple Search verification
+# Simple Search 验收流程
 
-用于“我改完了”之前，以及提交、推送、评审时。目标不是跑最多命令，而是让每条结论都有证据。
+在宣布改动完成、提交代码、推送或做代码评审前使用。核心原则是让每一条结论都有明确证据，不把推测当成验证结果。
 
-## 1. 按改动面选证据
+## 1. 按改动范围选择检查项
 
-| 改动面 | 必跑 | 附加 |
+| 改动范围 | 必跑项 | 补充项 |
 |---|---|---|
-| 搜索核心 | `node --test tests/search.test.mjs` | 触碰限制/排序时补边界用例 |
-| 会话提取/匹配 | `node --test tests/conversation.test.mjs` | 触碰思考/工具排除时补事件 fixture |
-| 路由、栅栏、根解析、会话观察 | `node --test tests/route.test.mjs` | `npm run check:auth` |
-| 客户端/范围/外观 | `node --test tests/client.test.mjs` | 刷新页面人工检查 |
-| 清单、locale、图标 | `npm run check:pack` | 重装后看插件页 |
-| 版本 | `npm test` 中的 `reports the package version` | `curl /version` |
-| 文档/脚本 | 受影响命令 | 链接与命令可复制 |
+| 搜索核心 | `node --test tests/search.test.mjs` | 涉及上限或排序时补边界用例 |
+| 会话提取与匹配 | `node --test tests/conversation.test.mjs` | 涉及思考/工具过滤时补事件样本 |
+| 路由、鉴权、目录解析、会话读取 | `node --test tests/route.test.mjs` | `npm run check:auth` |
+| 浏览器端 / 范围切换 / 外观 | `node --test tests/client.test.mjs` | 刷新页面人工检查 |
+| 清单、locale、图标 | `npm run check:pack` | 重装后检查插件详情页 |
+| 版本号 | `npm test` 中的 `reports the package version` | `curl /version` |
+| 文档 / 脚本 | 受影响的命令 | 确认链接有效、命令可直接执行 |
 
-不确定时先跑 `npm run check`；它覆盖语法、单测、认证、打包，是提交前的统一入口。
+不确定影响面时直接跑 `npm run check`，它涵盖语法检查、全部单测、鉴权集成和打包清单，是提交前的统一入口。
 
-## 2. 必跑门禁
+## 2. 必跑检查
 
 ```sh
 npm run check
 ```
 
-期望：
+预期结果：
 
-- 单测全绿（含版本测试与会话核心；具体条数以输出为准）。
-- 认证栅栏 `6/6 scenarios matched`、exit 0。
-- `npm pack --dry-run` 只包含预期文件，不带 `tests/`、`scripts/`、`docs/`、`*.tgz`。
+- 单元测试全部通过（包含版本号检查与会话提取核心，具体数量以实际输出为准）。
+- 鉴权集成检查输出 `6/6 scenarios matched`，退出码为 `0`。
+- `npm pack --dry-run` 只包含预期发布文件，不夹带 `tests/`、`scripts/`、`docs/` 或 `*.tgz`。
 
-单独复核：
+必要时可单独复核：
 
 ```sh
 npm run check:auth
 curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-search/version'
 ```
 
-`401` = 路由已注册但没有页面 cookie，正常；`404` = 未注册或前缀不一致。
+返回 `401` 说明路由已注册但未携带页面 cookie，属正常现象；返回 `404` 说明路由未注册或前缀不一致。
 
-## 3. 人工检查
+## 3. 人工检查清单
 
-只有用户能确认的项，不要替用户宣布通过：
+以下项目只能由用户在浏览器中亲自确认，不要代为宣布通过：
 
-1. 刷新页面，双击 Shift，输入查询。
-2. 工作区文件：切换 `All` / `Files` / `Text`，`↑`/`↓`、`Enter`、`Esc`。
-3. 会话标题：输入标题/工作区名的一部分，结果跨工作区；`Enter` 打开对应会话。
-4. 本会话：输入最近消息里的词，结果只含双方可见文字（无思考/工具/系统提示）；`Enter` 定位到 Chat 里的消息，非 Chat 视图时回退复制。
-5. **Plugins → Simple Search → Appearance**：Light / Dark / Follow DSH；重开面板确认。
-6. Follow DSH 下切换 DSH 主题，面板立即跟随。
-7. 插件详情页标题、描述、图标正确。
+1. 刷新页面，连按两次 `Shift` 呼出面板并输入关键词。
+2. **工作区文件**：切换「全部 / 文件 / 文本」标签，确认 `↑`/`↓`、`Enter`、`Esc` 正常；选中文件或文本命中按 `Alt+Enter`，确认原生 `@` 引用写入输入框（无会话时回退复制）。
+3. **范围切换**：焦点在搜索框时按 `Tab` / `Shift+Tab`，确认在三个范围间循环切换。
+4. **会话标题**：输入标题或工作区名的一部分，确认跨工作区列出结果，`Enter` 能打开目标会话。
+5. **本会话**：输入近期对话中的词，确认结果只含双方可见内容（无思考过程、工具调用或系统提示）；`Enter` 能定位到 Chat 视图中的对应消息，非 Chat 视图时回退为复制。
+6. **插件 → 简单搜索 → 外观**：依次切换浅色 / 深色 / 跟随 DSH，重开面板确认配色生效；在「跟随 DSH」下切换 DSH 主题，确认面板实时跟随。
+7. 确认插件详情页的标题、描述与图标显示正常。
 
-没做就写“未验证”，并说明需要用户做什么。
+未执行的项目一律归入「待验证」，并说明用户需要如何确认。
 
 ## 4. 安全复核
 
-改路由、认证、根解析或会话观察时，逐项过 `references/security-checklist.md`。不要用“现有测试还绿”代替逐项检查。
+只要改动触及路由、鉴权、目录解析或会话读取，必须逐项核对 `references/security-checklist.md`，不要用「现有测试都过了」替代逐项检查。
 
-## 5. 报告格式
+## 5. 验收报告格式
 
 ```text
-Verified:
-- npm run check — 单测全绿, auth 6/6, pack 12 files
-- 版本路由返回 `<version>`（与 package.json 一致）
+已验证：
+- npm run check — 单测全绿，auth 6/6，pack 12 个文件
+- /dsh-simple-search/version 返回 `<version>`（与 package.json 一致）
 
-Unverified:
-- 浏览器外观卡视觉（需用户刷新后确认）
+待验证：
+- 浏览器面板交互与外观卡视觉效果（需用户刷新后确认）
 
-Blocked:
-- 无 / 具体原因
+受阻项：
+- 无 / 具体阻塞原因
 ```
 
-规则：
+汇报原则：
 
-- 不把“路由 401”写成“插件已加载”；401 只证明路由存在。
-- 不把“install_bundle applied”写成“交互已通过”。
-- 不把“单测绿”写成“视觉已通过”。
-- 不省略失败命令或未跑项。
+- 不要把「路由返回 401」写成「插件已正常运行」，401 只说明路由存在。
+- 不要把「`install_bundle` 返回 applied」写成「交互已通过」。
+- 不要把「单测通过」写成「视觉效果已通过」。
+- 不隐瞒失败的命令或跳过的检查项。
 
-## 成功判据
+## 验收标准
 
-- 每条“已通过”都有命令或可复现观察。
-- 未验证项单独列出，且说明如何验证。
-- 安全清单逐项有结论，没有“应该没问题”。
-- 没有用更宽松的断言或跳过测试来换绿色。
+- 每一条「已验证」都有对应的命令输出或可复现依据。
+- 未验证项单独列出，并附带验证方式。
+- 安全清单逐项有明确结论，不写「应该没问题」。
+- 不通过放宽断言或跳过测试来换取绿灯。
 
-## 参考
+## 参考文档
 
 - `references/security-checklist.md`
 - `../../../docs/SECURITY.md`

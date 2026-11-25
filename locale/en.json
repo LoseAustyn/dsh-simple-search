@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Simple Search",
-    "description": "Press Shift twice to search workspace file names and text, session titles across workspaces, and the visible messages of the current chat (thinking excluded) and jumps to the matching message. Open a file hit in the side card editor, or open a session hit in place. Choose Light, Dark, or Follow DSH on the plugin's page."
+    "description": "Press Shift twice for global search across workspace files and text, session titles in any workspace, and visible messages in the current chat (skipping reasoning and tool calls). Jump to messages, press Alt+Enter to insert @ file mentions, and choose Light, Dark, or Follow DSH appearance."
   }
 }

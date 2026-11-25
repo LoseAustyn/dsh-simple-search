@@ -1,45 +1,45 @@
-# 0004 会话标题在浏览器匹配、会话内容由宿主读取
+# 0004 会话标题在浏览器匹配、会话内容由服务端读取
 
 Status: accepted
 Date: 2026-11-19
 
-## Context
+## 背景
 
-插件需要两个新范围：
+插件需要新增两个搜索范围：
 
-1. **会话标题搜索（可跨工作区）**：按标题找到任意工作区的会话并打开。
-2. **当前会话内的内容搜索**：搜当前对话，但不包含模型思考过程。
+1. **跨工作区会话标题搜索**：按标题定位任意工作区的已有会话并直接打开。
+2. **当前会话内容搜索**：检索当前对话历史，且排除模型思考过程。
 
-约束：
+同时需要满足以下约束：
 
-- 插件零运行时依赖，不新增索引、不常驻监听、不写会话文件。
-- 认证 fail-closed；任何读取会话内容的路由必须复用现有信任栅栏。
-- 不把模型思考、工具流量或系统提示当成“会话内容”返回给搜索面板。
-- DSH 的 `sessionQuery` 服务在 Web profile 中已挂载，但全文索引默认 `openAt: never`（只保留精确读取与标题折叠）。
+- 零运行时依赖，不新建持久索引、不常驻文件监听、不写入会话文件。
+- 保持鉴权默认拒绝（fail-closed），任何读取会话内容的路由必须复用现有鉴权拦截逻辑。
+- 思考过程、工具调用记录和系统提示词不属于「双方可见对话」，不能出现在搜索结果中。
+- DSH Web profile 默认挂载了 `sessionQuery` 服务，但其全文索引默认 `openAt: never`，只提供精确日志读取与标题折叠。
 
-## Decision
+## 决策
 
-**标题在浏览器内匹配。** `ctx.sessions.list` 已经是覆盖所有工作区的目录快照（`ids`、`byId`、标题、cwd、更新时间）。`client.js` 在快照上按 `title`/`displayTitle`、工作区目录名（cwd 的 basename）与会话 id 做不区分大小写的子串匹配，排除空白占位与 subagent 子会话，按 `updatedAt` 倒序。`Enter` 通过 `ctx.get('uiWorkspace').openSession(id)` 打开；没有该服务时退回复制 id。打开面板时调用 `sessions.refresh()`。
+**会话标题在浏览器端直接匹配。** `ctx.sessions.list` 已持有跨工作区的会话目录快照（包含 `ids`、`byId`、标题、`cwd` 与更新时间）。`client.js` 直接在快照上按 `title`/`displayTitle`、工作区目录名（`cwd` 的 basename）和会话 ID 做忽略大小写的子串匹配，过滤空白占位会话与 subagent 子会话，按 `updatedAt` 倒序返回。按 `Enter` 调用 `ctx.get('uiWorkspace').openSession(id)` 打开会话，缺少该服务时回退复制会话 ID；每次打开面板调用 `sessions.refresh()` 刷新列表。
 
-**内容由宿主读取。** 新增 `/dsh-simple-search/conversation`：
+**会话内容由服务端按需读取。** 新增 `/dsh-simple-search/conversation` 路由：
 
-- 复用同一 `fence`；校验 `sessionId` 白名单与查询长度。
-- 只调用 `ctx.sessionQuery.observeSession(sessionId, {projectionMode:'none'})`，带 8 秒超时；不拼接会话文件路径，不直接读 `~/.dsh/sessions`。
-- `conversation.js` 提取人类可见文本：`user/message` 且 `source.kind === 'user'`，以及 `assistant/message` 的 `text` 块。`reasoning`、`tool-call`、`tool/result`、`system/developer` 与合成上下文全部排除。
-- 提取结果按日志 `cursor` 缓存（最多 3 个会话），日志追加后才重新提取。
-- 上限由 `conversation.js` 拥有：5,000 条消息、200 条命中、单消息计数 50、返回文本 4,000 字符、摘录 260 字符。
+- 复用与文件搜索相同的鉴权与同源拦截，校验 `sessionId` 白名单与查询长度。
+- 仅调用 `ctx.sessionQuery.observeSession(sessionId, {projectionMode:'none'})` 并设置 8 秒超时，不拼接文件路径，也不直接读写 `~/.dsh/sessions`。
+- 由 `conversation.js` 提取双方可见文本：只保留 `user/message`（且 `source.kind === 'user'`）与 `assistant/message` 的 `text` 块，过滤 `reasoning`、`tool-call`、`tool/result`、`system/developer` 与合成上下文。
+- 提取结果在服务端内存中按日志 `cursor` 缓存（最多 3 个会话），日志追加导致 `cursor` 变化时才重新提取。
+- 上限集中由 `conversation.js` 控制：最多扫描 5,000 条消息、返回 200 条命中、单条消息计 50 次命中、返回复制文本上限 4,000 字符、单行摘录上限 260 字符。
 
-## Consequences
+## 影响
 
-- 标题搜索零延迟、零宿主成本，并且天然覆盖所有工作区；代价是只能匹配目录里已有的标题，不能做标题的模糊/语义搜索。
-- 标题搜索只做主会话（排除 subagent 子会话与空白占位）；用户要打开子会话需要从所属会话进入。
-- 内容搜索能读到加载窗口之外的历史，代价是一次会话观察与提取；cursor 缓存把连续输入的成本压到一次提取。
-- 内容面是有意的产品边界：思考过程与工具流量永远不出现，因此用户不能靠这个面板搜“模型当时怎么想的”或命令输出。
-- 依赖宿主的 `sessionQuery`；缺失时返回 `503 unavailable`，不退化成直接读日志文件。
+- 会话标题搜索零网络延迟、零服务端开销，且天然覆盖所有工作区；局限是只能匹配目录快照中已有的标题，不支持模糊或语义匹配。
+- 标题搜索只面向主会话（排除 subagent 子会话与空白占位），查看子会话仍需从所属主会话进入。
+- 会话内容搜索能覆盖滚动窗口之外的早期历史，代价是一次日志观察与提取；借助 `cursor` 缓存，连续输入期间不会重复提取。
+- 过滤思考过程与工具调用是明确的产品边界，用户无法借此面板搜索模型思考内容或命令输出。
+- 强依赖宿主的 `sessionQuery` 服务；该服务缺失时返回 `503 unavailable`，不降级为直接读盘。
 
-## Alternatives
+## 备选方案
 
-- **在 `~/.dsh/sessions` 上跑 ripgrep**：日志是 zstd 压缩的 v4 JSONL，需要解压、解析与格式跟随；还要自行判断哪些事件是思考/工具。放弃。
-- **启用 `session-query-sqlite` 全文索引**：Web profile 默认 `openAt: never`；启用会引入持久索引、启动与磁盘成本，而且索引的是全部事件（含 reasoning/tool），仍需同一套过滤。放弃。
-- **内容搜索也放在浏览器**：聊天记录是分页加载的，加载窗口之外的历史搜不到；需求是“当前会话内”，应覆盖完整日志。放弃。
-- **标题搜索也走宿主**：需要为每个会话折叠标题（读取日志）或新增标题索引；目录快照已经包含标题，没有必要。放弃。
+- **直接用 ripgrep 搜 `~/.dsh/sessions`**：会话日志是 zstd 压缩的 v4 JSONL，需要自行解压、解析并紧跟格式演进，还要自己区分思考与工具事件，放弃。
+- **启用 `session-query-sqlite` 全文索引**：Web profile 默认 `openAt: never`，开启会引入持久索引、启动耗时与磁盘占用，且索引包含全部事件（仍需二次过滤），放弃。
+- **在浏览器端直接搜已加载消息**：对话记录按需分页加载，滚动窗口外的历史消息搜不到，无法满足「搜完整当前会话」的需求，放弃。
+- **把会话标题搜索也放服务端**：需要遍历每个会话日志折叠标题或另建索引，而浏览器本地已有完整目录快照，多此一举，放弃。

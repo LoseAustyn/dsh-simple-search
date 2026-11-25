@@ -1,28 +1,28 @@
-# 0003 纯 JavaScript + node:test
+# 0003 保持纯 JavaScript 与 node:test
 
 Status: accepted
 Date: 2026-11-19
 
-## Context
+## 背景
 
-插件是 DSH profile 直接加载的本地 bundle，宿主半与浏览器半都是普通 ESM。引入 TypeScript、构建链、jsdom 或测试框架会增加安装步骤、构建产物和版本耦合，而当前代码规模仍在数千行以内，已有 JSDoc 与 `node:test` 行为测试覆盖。
+本插件以本地 bundle 形式由 DSH profile 直接加载，服务端与浏览器端都是标准 ESM。若引入 TypeScript、构建工具链、jsdom 或第三方测试框架，会带来额外的安装步骤、构建产物与版本耦合；而目前代码体量在数千行以内，配合 JSDoc 和 `node:test` 行为测试已足够维持质量。
 
-## Decision
+## 决策
 
 - 运行时保持纯 ESM JavaScript，零运行时依赖。
-- 测试使用 Node 内置 `node:test` + `node:assert/strict`。
-- 搜索核心用真实临时目录；路由用 fake ctx 直接调用 handler；浏览器半用 `vm` + fake React/localStorage。
-- 认证集成用真实 loopback HTTP 的独立脚本，不放进单测。
+- 单元测试直接使用 Node.js 内置的 `node:test` 与 `node:assert/strict`。
+- 搜索核心用真实临时目录测试；服务端路由用 mock `ctx` 直接调用 handler；浏览器端通过 `vm` 搭配精简版 mock React 和 `localStorage` 测试。
+- 需要真实本地 HTTP 服务的鉴权集成测试放在独立脚本 `scripts/verify-auth-fence.mjs`，不混入单元测试。
 
-## Consequences
+## 影响
 
-- 新环境不需要 `npm install`，CI 也不需要依赖缓存。
-- 没有静态类型检查；靠 JSDoc、测试和 code review 约束契约。
-- 浏览器测试不覆盖真实 DOM/布局；视觉与交互必须人工验收。
-- 新增依赖需要有明确失败场景，不能为了“更现代”而引入构建链。
+- 新环境拉下代码即可运行，无需 `npm install`，CI 也无需维护依赖缓存。
+- 缺少编译期静态类型检查，接口契约依靠 JSDoc、测试覆盖与代码评审来约束。
+- `vm` 沙箱测试无法覆盖真实 DOM 渲染与视觉布局，交互和样式仍需人工在浏览器中验收。
+- 后续若要引入任何依赖，必须给出当前方案无法解决的具体失败场景，不为追求「更现代」而增加构建链。
 
-## Alternatives
+## 备选方案
 
-- **TypeScript + 构建**：类型收益明确，但增加构建、产物、source map 与 DSH 版本耦合；当前规模不值得。
-- **Vitest + jsdom**：测试体验更好，但引入依赖与 DOM 模拟，且现有 VM 模式已覆盖注册与偏好逻辑；暂不引入。
-- **Playwright 端到端**：能覆盖真实页面，但需要浏览器与运行中的 DSH，成本和稳定性不适合作为提交门禁；保留人工验收。
+- **TypeScript + 构建链**：类型安全收益明确，但会引入编译步骤、产物管理、source map 及与 DSH 的版本耦合，当前体量不划算，放弃。
+- **Vitest + jsdom**：测试 API 更丰富，但引入外部依赖与 DOM 模拟成本，现有 `vm` 模式已足以覆盖注册、状态与偏好逻辑，暂不引入。
+- **Playwright 端到端测试**：能覆盖真实页面，但依赖浏览器环境与运行中的 DSH 实例，运行成本与稳定性不适合作为每次提交的门禁，继续保留人工验收。

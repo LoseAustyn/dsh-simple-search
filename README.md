@@ -6,76 +6,88 @@
 
 [English](README.en.md)
 
-一个 DSH Web UI 插件：在页面任意位置**双击 Shift**，即可打开 JetBrains 风格的**简单搜索**面板，提供三个搜索范围：
+适用于 DSH Web 的全局搜索插件。在页面任意位置连按两次 `Shift`，即可呼出类似 JetBrains Search Everywhere 的搜索面板，支持三个搜索范围：
 
-- **工作区文件**：搜索当前工作区的**文件名**与**每个文件的内容**，提供「全部 / 文件 / 文本」三个标签页；`Enter` 在侧栏卡片编辑器中打开选中项（文本命中会定位到对应行）。
-- **会话标题**：**跨工作区**搜索会话标题（同时匹配标题、工作区目录名与会话 id）；`Enter` 打开该会话，需要时切换到对应工作区。
-- **本会话**：搜索**当前对话的内容**，只包含双方实际看到的文字——你输入的消息与助手可见的回复；思考过程、工具调用/结果、合成上下文与系统提示都不参与。`Enter` 在 Chat 视图中定位到该条消息（必要时先加载更早历史）；找不到 Chat 锚点时回退为复制整条消息。
+- **工作区文件**：同时搜当前工作区的文件名与文件内容，可在「全部 / 文件 / 文本」标签间切换。
+- **会话标题**：跨工作区搜索已有会话（匹配标题、工作区目录名与会话 ID），回车直接打开，必要时自动切换工作区。
+- **本会话**：搜索当前对话记录，只匹配你的提问与助手的正文回复，自动跳过思考过程、工具调用和系统提示词。
 
-`↑`/`↓` 切换结果，`Tab` / `Shift+Tab` 循环切换三个范围，`Esc` 关闭。打开面板时会选中上一次的查询，直接输入或粘贴即可替换。
+每次呼出面板都会默认全选上一次的搜索词，直接输入或粘贴即可替换。结果按文件分组并高亮匹配片段，面板底部显示当前工作区路径、命中数、搜索引擎及耗时。
 
-有会话打开时，在面板里选中一个文件（或文件内的文本命中），按 **`Alt+Enter`** 即可把该文件作为 DSH 原生 `@` 引用插入当前会话输入框；面板关闭，焦点回到输入框。
+## 快捷键
 
-## 功能
-
-- 双击判定为 400 ms 内两次干净的 Shift 按键：按住 Shift 或输入 `Shift`+字母不会误触发。
-- 内容搜索由宿主执行：优先使用可解析到的随包 ripgrep（`@vscode/ripgrep`、`PATH` 上的 `rg`，或 `DSH_SIMPLE_SEARCH_RG`）；不可用时回退到有界的 Node.js 遍历，没有 ripgrep 也能工作。
-- 文件名搜索会列出工作区文件（输入时缓存 10 秒），排序使用 JetBrains 风格评分：完全匹配 basename、basename 子串、路径子串，最后是模糊子序列（例如 `htexec` 能找到 `http-executor.ts`）。「全部」在一次请求中返回两类结果。
-- **不应用** `.gitignore` 规则（`--no-ignore-vcs`）：很多工作区是忽略所有子仓库的根仓库，JetBrains 风格搜索需要能看到子仓库内部。改为显式排除重目录（`.git`、`node_modules`、`dist`、`.venv*`、缓存、`.dsh-memory`），两种引擎共用同一份排除表。
-- 支持大小写敏感（`Aa`）与正则表达式（`.*`）开关。
-- 会话标题在浏览器内匹配页面已加载的会话目录，不需要宿主往返，天然覆盖所有工作区；空白占位与 subagent 子会话被排除，结果按最近更新排序。
-- 本会话内容由宿主读取已提交的会话日志，因此能搜到加载窗口之外的历史消息。宿主路由 `/dsh-simple-search/conversation` 与文件路由共用同一套信任栅栏，并限制扫描（5,000 条消息）、返回（200 条命中）与观察时间（8 秒），提取结果按日志 cursor 缓存。思考块、工具调用/结果与系统提示不会进入搜索面。
-- **从搜索面板插入 @ 文件引用**：在面板里选中文件名行或文件内的文本命中后按 `Alt+Enter`，该文件作为原生 DSH `@路径` 引用插入当前会话输入框（含空格的路径写作 `@"路径"`），面板关闭、焦点回到输入框。插入时光标位置来自会话输入框公开的 `inputActions`（`captureInsertion`，经 `conversation.input.overlay` 桥接），并走会话公开的输入面板，尊重草稿版本；没有打开的会话、或输入面板拒绝写入（草稿冻结、旧版 DSH）时改为复制 `@` 文本。该按键只存在于面板打开期间（面板自己的 keydown），不占用输入框的 `Shift+Enter` 换行。
-- 焦点在搜索框时，`Tab` / `Shift+Tab` 按「工作区文件 → 会话标题 → 本会话」循环切换（反向同理）；点击范围标签仍然有效。
-- 结果按文件分组并高亮命中文本；底部显示工作区根目录、命中/文件数量、引擎与耗时。
-- 外观支持**浅色 / 深色 / 跟随 DSH** 三选一：在「插件 → 简单搜索」详情页的「外观」卡片中设置，选择保存在浏览器 `localStorage`（`dsh-simple-search:appearance`）。「跟随 DSH」读取 DSH 当前实际色板（`body[data-ds-dark-theme]`，并订阅 `theme/change`），DSH 切换主题或系统色板翻转时自动跟随；浅色/深色则固定面板配色。两套色板都由面板内的 CSS 变量驱动，并设置对应的 `color-scheme`，让光标、选中与滚动条跟随。
-- 激活命中项（点击或 `Enter`）会打开文件**并关闭面板**。安装 better-sidebar 插件时，`Enter` 通过 `ctx.betterSidebar.openFile` 精确打开到行；其他部署会复制 `path:line`、显示短暂提示，稍后关闭。
-
-## 文件结构
-
-| 文件 | 作用 |
+| 按键 | 作用 |
 |---|---|
-| `index.js` | 宿主半：回环路由 `/dsh-simple-search/version`、`/dsh-simple-search/search`（`mode=text|files|all`）与 `/dsh-simple-search/conversation`，工作区/会话根目录解析，浏览器信任栅栏。 |
-| `search.js` | 可测试的搜索核心：ripgrep 参数与解析、回退遍历、跳过表、匹配器编译、文件列表与文件名排序。 |
-| `conversation.js` | 可测试的会话核心：人类可见文本提取（人类 prompt + assistant 正文，排除思考与工具流量）、会话内匹配、摘录与上限。 |
-| `client.js` | 浏览器半：`shell.overlay` 入口、双击 Shift 监听、范围切换（工作区文件 / 会话标题 / 本会话）与 `Tab` 循环、面板内 `Alt+Enter` 引用插入（失败回退复制）、对话框、防抖请求、打开命中项、只读 Chat 锚点定位；`conversation.input.overlay` 桥接组件把会话输入框的公开 input actions 交给根浮层；`plugins.bundle.config` 入口提供插件详情页的外观卡片。 |
-| `tests/search.test.mjs` | 搜索核心的 `node --test` 覆盖。 |
-| `tests/conversation.test.mjs` | 会话提取、思考/工具排除、匹配与上限的 `node --test` 覆盖。 |
-| `tests/route.test.mjs` | 信任栅栏、根目录解析、会话观察与响应封装的 `node --test` 覆盖。 |
-| `tests/client.test.mjs` | 外观偏好、跟随 DSH、面板色板、范围切换与 `Tab` 循环、标题匹配、消息复制、`Alt+Enter` 引用插入与复制回退的 `node --test` 覆盖（VM + 假 React，无需浏览器）。 |
+| `Shift` × 2 | 打开搜索面板（400 ms 内连按两次；按住 `Shift` 或输入大写字母不会误触） |
+| `Tab` / `Shift+Tab` | 在「工作区文件 → 会话标题 → 本会话」之间循环切换（焦点在搜索框时） |
+| `↑` / `↓` | 上下选择结果 |
+| `Enter` | 打开选中文件、切换到目标会话，或在对话视图中定位到该条消息 |
+| `Alt+Enter` | 将选中项所在文件作为原生 `@路径` 引用插入当前对话输入框 |
+| `Esc` | 关闭面板 |
 
-路由只读，并拒绝已注册工作区或调用会话工作目录之外的根目录；会话内容路由只通过宿主的 `sessionQuery` 服务读取一个会话，不直接打开日志文件。三条路由与官方本地路由共用同一套浏览器信任栅栏（回环/`trustedHosts` Host、同源元数据、`connection.requestRejection`），因此真正授权请求的是页面自身的 auth cookie。栅栏**默认拒绝（fail-closed）**：宿主没有 Connection 服务、或该服务无法拒绝请求时，路由一律返回 `503 auth-unavailable`，不会把工作区文本交给身份无法验证的调用方。插件同时在 `inject` 中声明了 `connection`，因此在没有宿主认证的部署里根本不会挂载。
+面板内快捷键仅在面板打开期间生效，不会占用对话输入框原本的 `Shift+Enter` 换行等按键。
 
 ## 安装
 
-插件以 `dsh-simple-search` bundle 形式安装到 DSH 的 `web` profile；profile 链接本目录，本目录始终是源码。
+本插件无运行时依赖，不需要执行 `npm install`。
+
+- **开放插件市场**：前往 [DSH 开放插件市场](https://dshopen.org/zh/plugins/dsh-simple-search/) 查看安装说明。
+- **本地目录安装**：克隆或下载本仓库后，在 DSH Web 的 **插件 → 添加插件** 中选择 `simple-search` 目录；或在终端执行：
+  ```sh
+  dsh plugin --profile web add /path/to/simple-search
+  ```
+  使用命令行添加后，重启一次 DSH 即可加载。
+
+## 功能说明
+
+### 文件与全文搜索
+
+- **搜索引擎**：全文搜索优先调用本地 ripgrep（DSH 自带的 `@vscode/ripgrep`、`PATH` 中的 `rg`，或 `DSH_SIMPLE_SEARCH_RG` 指定的路径）；若环境中没有 ripgrep，则自动回退到内置的 Node.js 目录遍历，无需额外配置也能正常使用。
+- **匹配与排序**：支持区分大小写（`Aa`）和正则表达式（`.*`）。文件名列表在输入期间缓存 10 秒，按「完整文件名 → 文件名子串 → 路径子串 → 模糊子序列」打分排序（例如输入 `htexec` 即可搜到 `http-executor.ts`）。「全部」标签会在一次请求内同时返回文件名与文本结果。
+- **不遵循 `.gitignore`**：许多多仓库工作区会在根目录 `.gitignore` 中忽略所有子仓库。为了能搜到子仓库代码，插件默认开启 `--no-ignore-vcs`，改为统一排除 `.git`、`node_modules`、`dist`、`.venv*`、各类缓存和 `.dsh-memory` 等目录。
+- **打开或复制路径**：配合 `better-sidebar` 插件使用时，点击或按 `Enter` 会在侧栏编辑器中直接打开文件（文本命中会精确跳到对应行）；未安装该插件时，则自动复制 `path` 或 `path:line` 并关闭面板。
+- **插入 `@` 文件引用**：选中文件名或某条代码命中后按 `Alt+Enter`，对应文件会以 DSH 原生 `@路径` 引用（路径含空格时自动加引号写作 `@"路径"`）插入当前对话输入框，随后关闭面板并将焦点切回输入框。若当前没有打开的会话，或草稿处于不可编辑状态，则回退为复制 `@路径` 文本。
+
+### 会话与当前对话搜索
+
+- **跨工作区会话标题**：直接在浏览器端检索页面已加载的会话列表，无需后端请求即可覆盖全部工作区；空白占位会话与 subagent 子会话会自动过滤，结果按最近更新时间倒序排列。
+- **当前对话全文**：「本会话」由服务端读取已提交的会话日志，因此能够搜到当前滚动加载窗口之外的早期历史消息（单次最多扫描最近 5,000 条消息、返回 200 条命中，超时上限 8 秒）。按 `Enter` 会在 Chat 视图中自动加载并滚动到对应消息；若当前不在 Chat 视图或无法定位锚点，则复制整条消息文本。
+
+### 外观设置
+
+在 **插件 → 简单搜索** 详情页的「外观」卡片中，可选择 **浅色**、**深色** 或 **跟随 DSH**（配置保存在浏览器 `localStorage` 中）。设为「跟随 DSH」时，面板配色、光标与滚动条会随 DSH 主题或系统深浅色切换实时更新。
+
+## 安全边界
+
+插件在本地注册了三条只读路由：`/dsh-simple-search/version`、`/dsh-simple-search/search` 与 `/dsh-simple-search/conversation`。
+
+- **默认拒绝（Fail-closed）**：所有路由均接入 DSH 的 `connection` 鉴权与同源校验，仅放行携带页面有效登录 cookie 的同源请求。若运行环境未启用 `connection` 服务，插件不会挂载，路由也会直接返回 `503 auth-unavailable`，绝不降级放行。
+- **访问范围受限**：文件搜索严格限制在已注册工作区或当前会话的工作目录内；对话内容仅通过宿主的 `sessionQuery` 接口按会话读取，不直接访问底层日志文件。
+
+完整的威胁模型与拒绝策略见 [docs/SECURITY.md](docs/SECURITY.md)。
+
+## 开发与验证
+
+| 路径 | 职责 |
+|---|---|
+| `index.js` | Node 服务端入口：注册本地只读路由、同源与登录态校验、工作区根目录解析 |
+| `search.js` | 文件搜索核心：ripgrep 调用与回退遍历、排除目录表、匹配编译与文件名排序 |
+| `conversation.js` | 对话搜索核心：提取双方可见文本、过滤思考与工具记录、生成命中摘录 |
+| `client.js` | 浏览器端入口：搜索面板 UI、双击 `Shift` 检测、范围切换、`@` 引用插入与外观设置卡 |
+| `tests/*.test.mjs` | 基于 `node:test` 的单元测试（覆盖搜索算法、对话提取、路由鉴权与前端状态） |
+| `scripts/verify-auth-fence.mjs` | 基于临时本地 HTTP 服务的 6 场景鉴权集成检查（无需启动 DSH） |
+
+常用检查命令（CI 执行同一入口）：
 
 ```sh
-npm run check
+npm run check        # 语法检查 + 单元测试 + 鉴权集成检查 + npm pack 清单校验
+npm test             # 仅运行单元测试
+npm run check:auth   # 运行 6 个本地 HTTP 鉴权场景（期望 6/6 通过）
 ```
 
-`npm run check` 会跑语法检查、全部 `node:test`、6 个认证栅栏场景和
-`npm pack --dry-run`；CI 使用同一条命令。修改 `client.js` 后刷新页面，新的客户端模块会替换已加载的旧模块。宿主半改动（`index.js`、`search.js`）不会对 link 安装的包重新求值（Node 按真实路径缓存模块，HMR 只清理 profile 根下的模块）：需要换一个目录名重新 remove + install，或重启宿主。
+本地联调提示：
 
-## 验证
+- 修改 `client.js` 后，刷新浏览器页面即可加载新模块。
+- 修改 `index.js`、`search.js` 或 `conversation.js` 后，由于 Node.js 会按真实路径缓存 `link:` 方式安装的模块，原地重装不会刷新服务端代码——请重启 DSH，或修改目录名后重新安装（「本会话」范围依赖 `/dsh-simple-search/conversation` 路由，升级后若未重载服务端会提示路由不存在）。
 
-```sh
-# 路由已注册并能响应（没有页面 auth cookie 时返回 401 属正常）
-curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-search/version'
-
-# 可复跑的认证栅栏检查：真实 HTTP、一次性回环服务器、假宿主服务
-npm run check:auth   # 期望 6/6，退出码 0
-
-# 客户端实时注册
-#   cordis_inspect_query Slots.listSubTree root=shell.overlay  → occupant "simple-search"
-```
-
-`scripts/verify-auth-fence.mjs` 挂载真实 handler，覆盖正常 `dsh web` 到不了的分支：完全没有 `connection` 服务（`503 auth-unavailable`）、服务为 `null`、校验抛错（`403`）、会话被接纳（`200`）、未登录（`401`）与跨站请求（`403`）。不需要运行中的宿主，也不需要 cookie。
-
-手动验收：刷新页面，双击 Shift，输入 `RPC HTTP GET`，在第一个结果上按 Enter；再双击 Shift，按 `Tab` 依次切到「会话标题」「本会话」并确认再按 `Tab` 回到「工作区文件」；搜索一个文件名或代码片段，选中后按 `Alt+Enter`，确认输入框出现 `@` 引用、面板关闭且焦点回到输入框。随后切换到「会话标题」，搜索某个会话标题的一部分，按 Enter 打开该会话（可以跨工作区）；再切换到「本会话」，搜索最近对话里的一个词，按 Enter 定位到该条消息——思考过程与工具文本不应出现；把 Conversation View 切换到非 Chat 时应回退为复制。最后打开「插件 → 简单搜索」，在「外观」卡片中依次切换浅色 / 深色 / 跟随 DSH，再双击 Shift 确认面板配色与选项一致，DSH 切换主题时「跟随 DSH」应立即跟上。
-
-「本会话」依赖宿主新增的 `/dsh-simple-search/conversation` 路由，必须先重载宿主半（换目录名重装或重启宿主）；只刷新页面而宿主仍是旧模块时，该范围会报路由不存在。
-
-## 开发
-
-面向 agent 的规则、命令和模块地图从 [AGENTS.md](AGENTS.md) 开始。架构、安全、重载矩阵与决策记录在 [docs/](docs/)；可复用流程在 `.agents/skills/`。
+架构细节、重载矩阵与历史设计决策见 [docs/](docs/)（[ARCHITECTURE.md](docs/ARCHITECTURE.md)、[DEVELOPMENT.md](docs/DEVELOPMENT.md)、[decisions/](docs/decisions/)），面向 Agent 的开发约束见 [AGENTS.md](AGENTS.md)。

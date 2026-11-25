@@ -1,97 +1,97 @@
-# Security
+# 安全说明
 
-`dsh-simple-search` 的宿主路由会把工作区文件内容与会话消息内容返回给浏览器，所以认证与根目录/会话约束是安全边界，不是“体验优化”。
+`dsh-simple-search` 的服务端路由会将工作区文件内容与会话消息返回给浏览器，因此鉴权、目录边界与会话访问约束属于硬性安全边界，而非体验优化。
 
 ## 威胁模型
 
-- 攻击面：本机回环 HTTP 路由 `/dsh-simple-search/{version,search,conversation}`。
-- 调用者：DSH 页面（带页面认证 cookie）、同机其他进程、被诱导的浏览器页面、DNS rebinding 页面。
-- 资产：工作区文件内容、文件路径、会话消息内容、会话/工作区信息。
-- 非目标：远程多租户、公网部署、跨用户隔离；这些不在当前插件契约内。
+- **攻击面**：本机回环 HTTP 路由 `/dsh-simple-search/{version,search,conversation}`。
+- **潜在调用方**：合法的 DSH 页面（携带页面登录 cookie）、本机其他进程、被诱导访问本地端口的第三方网页、DNS rebinding 页面。
+- **保护资产**：工作区文件内容与路径、会话消息正文、工作区与会话元数据。
+- **非目标场景**：远程多租户、公网直接暴露、跨操作系统用户隔离（不在当前插件契约范围内）。
 
-## 信任边界
+## 信任链路
 
 ```text
 浏览器页面
   │  Host / Origin / sec-fetch-site / cookie
   ▼
-index.js fence
-  │  解析 Host、拒绝 cross-site、Origin 同源
+index.js 鉴权与同源拦截（fence）
+  │  校验 Host 可解析、拒绝 cross-site、要求 Origin 同源
   ▼
 connection.requestRejection
-  │  Host 权威（loopback / bind address / trustedHosts）
-  │  浏览器登录态
+  │  校验 Host 权威（loopback / bind address / trustedHosts）
+  │  校验浏览器登录态
   ▼
 resolveRoot → searchWorkspace            sessionId 白名单 → sessionQuery.observeSession
-  │  根必须来自会话或已注册工作区          │  只读宿主日志，会话 id 不得越权
+  │  目录必须落在会话或已注册工作区内        │  仅通过宿主接口只读读取，防越权访问
   ▼                                        ▼
-只读响应（文件内容）                       只读响应（人类 prompt + assistant 正文）
+只读响应（文件内容）                       只读响应（用户提问 + 助手正文）
 ```
 
-Host 权威由 DSH 的 Connection 服务判定，插件不自行维护 `trustedHosts` 列表。插件自己的 fence 负责：Host 可解析、`sec-fetch-site` 非 `cross-site`、`Origin` 与 Host 同源、`connection` 存在且具备 `requestRejection`、非 GET 的非回环请求拒绝。
+Host 权威列表由 DSH 的 `connection` 服务统一判定，插件不自行维护 `trustedHosts`。插件自身的 `fence` 负责把关：`Host` 可解析、`sec-fetch-site` 非 `cross-site`、`Origin` 与 `Host` 同源、`connection` 存在且具备 `requestRejection`、拒绝非回环的非 GET 请求。
 
-## 拒绝矩阵
+## 拒绝策略矩阵
 
-| 条件 | 状态 | code | 处理 |
+| 触发条件 | HTTP 状态码 | `code` | 处理方式 |
 |---|---|---|---|
-| `connection` 缺失 | 503 | `auth-unavailable` | 拒绝；不降级为“跳过校验” |
+| `connection` 服务缺失 | 503 | `auth-unavailable` | 拒绝，绝不降级放行 |
 | `connection` 为 `null` | 503 | `auth-unavailable` | 拒绝 |
-| 没有 `requestRejection` | 503 | `auth-unavailable` | 拒绝 |
-| `requestRejection` 抛错 | 403 | `forbidden` | 拒绝 |
-| `requestRejection` 返回 401 | 401 | `forbidden` | 原状态返回 |
-| `requestRejection` 返回 403 或数字 | 原状态 | `forbidden` | 原状态返回 |
-| Host 不能解析 | 403 | `forbidden` | 拒绝 |
+| 缺少 `requestRejection` 方法 | 503 | `auth-unavailable` | 拒绝 |
+| `requestRejection` 抛出异常 | 403 | `forbidden` | 拒绝 |
+| `requestRejection` 返回 401 | 401 | `forbidden` | 透传状态码拒绝 |
+| `requestRejection` 返回 403 或其他数字 | 原状态码 | `forbidden` | 透传状态码拒绝 |
+| `Host` 无法解析为 URL | 403 | `forbidden` | 拒绝 |
 | `sec-fetch-site: cross-site` | 403 | `forbidden` | 拒绝 |
-| `Origin` 与 Host 不同源 | 403 | `forbidden` | 拒绝 |
+| `Origin` 与 `Host` 不同源 | 403 | `forbidden` | 拒绝 |
 | `Origin: null` | 403 | `forbidden` | 拒绝 |
-| 非 GET 且 Host 非回环 | 403 | `forbidden` | 拒绝 |
+| 非 GET 且 Host 非回环地址 | 403 | `forbidden` | 拒绝 |
 
-`requestRejection` 返回 `undefined`/`null`/`false` 才表示放行。插件在 Connection 服务缺失时**不会**尝试“本机请求直接放行”。
+只有当 `requestRejection` 明确返回 `undefined`、`null` 或 `false` 时才会放行。当 `connection` 服务不可用时，插件**不会**退化为「本机请求直接放行」。
 
-## 根目录规则
+## 搜索目录边界
 
-1. 会话根：`sessionId` 通过白名单正则 → `sessions.get(id)` → `workingDirectory.get(session)`，回退 `session.header.cwd`；必须 realpath 成目录。
-2. 显式 `root`：`path.resolve` + realpath；必须落在会话目录或任一已注册工作区的 realpath 内。
-3. 默认根：`workspaceRegistry.list()` 中最近更新的已注册工作区。
-4. 都没有 → `422 bad-root`；不退回宿主 `process.cwd()`。
+1. **会话目录**：`sessionId` 通过白名单正则校验后，读取 `sessions.get(id)` → `workingDirectory.get(session)`，缺失时回退到 `session.header.cwd`，且 `realpath` 必须指向真实目录。
+2. **显式 `root`**：经 `path.resolve` 与 `realpath` 解析后，必须落在会话目录或任一已注册工作区的 `realpath` 内部。
+3. **默认目录**：取 `workspaceRegistry.list()` 中最近更新的已注册工作区。
+4. **兜底行为**：以上均不可用时返回 `422 bad-root`，绝不回退到服务端 `process.cwd()`。
 
-`isWithin` 用路径段边界，不用字符串前缀。显式 root 的 `path.resolve` 会让相对路径先按宿主 cwd 解析，但随后仍必须通过已注册工作区校验；客户端实际发送绝对路径。
+路径归属函数 `isWithin` 按路径段边界比较，而非字符串前缀。显式 `root` 虽先经 `path.resolve`，但后续仍受已注册工作区边界校验约束；前端实际只传绝对路径。
 
-## 会话内容规则
+## 会话内容访问规则
 
-1. `sessionId` 必须先通过白名单正则（字母数字开头，≤200 字符，只含字母数字、`.`、`_`、`-`），否则 `422 bad-session`。
-2. 只通过宿主的 `sessionQuery.observeSession` 读取；插件不拼接会话文件路径、不直接打开 `~/.dsh/sessions`。
-3. 只返回 `user/message` 中 `source.kind === 'user'` 的文本块与 `assistant/message` 的 `text` 块。`reasoning`（思考过程）、`tool-call`、`tool/result`、`system/developer` 与合成上下文一律不进入响应。
-4. 观察带 8 秒超时；单次最多扫描 5,000 条消息、保留 2,000,000 字符并返回 200 条命中，超出置 `truncated`。
-5. 会话提取缓存最多保留 3 个会话，按日志 `cursor` 失效；它不落盘、不跨进程共享。
-6. 会话不存在 → `404 not-found`；宿主没有 `sessionQuery` → `503 unavailable`；两者都不回退到文件系统读取。
-7. 内容命中跳转只在浏览器内进行：读取 Chat 的 `data-chat-anchor-key` 响应行锚点并调用公开的 `session.loadThrough(seq)`；不修改 Chat 的 DOM/状态，找不到锚点时只复制文本。`turn`/`step`/`messageId` 是页面已持有的会话元数据，不新增暴露面。
+1. `sessionId` 必须符合白名单正则（字母数字开头，长度 ≤200，仅含字母数字、`.`、`_`、`-`），否则返回 `422 bad-session`。
+2. 仅通过宿主的 `sessionQuery.observeSession` 读取会话，不拼接路径，也不直接打开 `~/.dsh/sessions` 下的文件。
+3. 只提取 `user/message` 中 `source.kind === 'user'` 的文本与 `assistant/message` 的 `text` 块；思考过程（`reasoning`）、工具调用/结果、系统/开发者消息与合成上下文一律过滤，不进入响应体。
+4. 单次读取受 8 秒超时限制；最多扫描 5,000 条消息、保留 2,000,000 字符、返回 200 条命中，触顶时置 `truncated: true`。
+5. 提取结果缓存最多保留 3 个会话，按日志 `cursor` 失效，仅驻留进程内存，不落盘也不跨进程共享。
+6. 会话不存在返回 `404 not-found`，宿主缺少 `sessionQuery` 返回 `503 unavailable`，两种情况均不回退到直接读盘。
+7. 消息跳转完全在浏览器端执行：只读查询 Chat 的 `data-chat-anchor-key` 并调用公开的 `session.loadThrough(seq)`，不修改 Chat 的 DOM 或状态；找不到锚点时仅复制文本。`turn`/`step`/`messageId` 原本就随会话事件下发到页面，不增加新的信息暴露面。
 
-**会话标题**搜索在浏览器内完成：只读 `ctx.sessions.list` 已加载的目录快照，不发请求、不新增路由。打开选中会话调用 `ctx.get('uiWorkspace').openSession(id)`；没有该服务时只复制 id。
+**会话标题**搜索同样在浏览器端完成，只读 `ctx.sessions.list` 的本地快照，不发额外网络请求。打开会话调用 `ctx.get('uiWorkspace').openSession(id)`，缺少该服务时仅复制会话 ID。
 
-## 只读与上限
+## 只读与资源上限
 
-- 三条路由只读；没有写文件、改工作区、执行命令的能力。
-- `MAX_MATCHES`、`MAX_MATCHES_PER_FILE`、`MAX_LINE_CHARS`、`MAX_FILE_BYTES`、`MAX_VISITED`、`SEARCH_TIMEOUT_MS` 由 `search.js` 拥有。
-- `MAX_CONVERSATION_*` 由 `conversation.js` 拥有；`CONVERSATION_TIMEOUT_MS` 由 `index.js` 拥有。
-- 超时/预算触发时返回 `truncated: true`，不是无界扫描。
-- 响应包含 `root` 绝对路径与会话 `cwd`（页面用于显示工作区与打开文件）；不要把响应转发给不受信任的第三方。
+- 三条路由严格只读，不具备写文件、改工作区或执行命令的能力。
+- `MAX_MATCHES`、`MAX_MATCHES_PER_FILE`、`MAX_LINE_CHARS`、`MAX_FILE_BYTES`、`MAX_VISITED`、`SEARCH_TIMEOUT_MS` 由 `search.js` 统一维护。
+- `MAX_CONVERSATION_*` 由 `conversation.js` 维护，`CONVERSATION_TIMEOUT_MS` 由 `index.js` 维护。
+- 触发超时或预算上限时返回 `truncated: true`，杜绝无界扫描。
+- 响应体包含 `root` 绝对路径与会话 `cwd`（供页面展示和打开文件），不要将响应转发给不受信任的第三方。
 
 ## 已知限制
 
-- 认证完全依赖 DSH 的 `connection` 服务；插件不实现独立 token。
-- 没有速率限制；本机同用户进程可以反复请求。
-- 没有内容脱敏；搜索结果是工作区原文与会话原文。
-- 会话内容路由依赖宿主的 `sessionQuery`；缺失时整体不可用（`503`），不会退化成直接读日志文件。
-- 不防“用户自己把页面 cookie 交给他人”这类终端侧问题。
-- 不覆盖非回环/反向代理部署；这类部署的 Host 权威由 `connection` 的 `trustedHosts`/bind 配置决定。
+- 鉴权完全依托 DSH 的 `connection` 服务，插件不实现独立 token 机制。
+- 未内置请求速率限制，同机同用户进程理论上可高频调用。
+- 不对搜索结果做敏感信息脱敏，返回的是工作区与会话原文。
+- 会话内容搜索强依赖宿主 `sessionQuery` 服务，缺失时整体返回 `503`，不降级读盘。
+- 无法防范用户主动将页面 cookie 泄露给第三方等终端侧风险。
+- 非回环或反向代理部署下的 Host 校验权威完全取决于 DSH `connection` 的 `trustedHosts` 与绑定配置。
 
-## 改动路由时的检查
+## 改动路由时的核对要求
 
-逐项过 `.agents/skills/simple-search-verify/references/security-checklist.md`，并确认：
+修改路由、鉴权或目录逻辑时，需逐项过 `.agents/skills/simple-search-verify/references/security-checklist.md`，并确认：
 
-- `tests/route.test.mjs` 覆盖缺服务、null、抛错、拒绝直通、跨站、越界。
-- 会话路由额外覆盖：缺 `sessionQuery`、非法 `sessionId`、会话不存在、观察超时、`observeSession` 的 lease 被释放。
-- `scripts/verify-auth-fence.mjs` 仍为 6/6；新增分支要加场景。
-- `/version` 仍受同一栅栏保护，不能成为未认证的探测口。
-- 新增错误分支有稳定 `code`，不把内部异常文本直接返回给未授权调用者。
+- `tests/route.test.mjs` 完整覆盖：缺服务、`null`、抛错、拒绝状态码透传、跨站与目录越界。
+- 会话路由额外覆盖：缺 `sessionQuery`、非法 `sessionId`、会话不存在、观察超时，以及 `observeSession` lease 正确释放。
+- `scripts/verify-auth-fence.mjs` 跑满 6/6；新增拒绝分支时补充对应场景。
+- `/version` 同样经过完整鉴权拦截，不成为未认证探测接口。
+- 新增错误分支均映射稳定 `code`，不向未授权调用方暴露内部异常堆栈或原文。

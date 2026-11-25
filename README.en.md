@@ -6,162 +6,88 @@
 
 [简体中文](README.md)
 
-A DSH Web UI plugin: press **Shift twice** anywhere in the page to open a
-JetBrains-style **Simple Search** box with three scopes:
+A global search plugin for DSH Web. Press `Shift` twice anywhere on the page to open a JetBrains-style Search Everywhere dialog with three scopes:
 
-- **Workspace** — searches **file names** and the **text of every file** in the
-  current workspace, with `All` / `Files` / `Text` tabs. `Enter` opens the
-  selected hit in the side-card editor (at its line for text hits).
-- **Sessions** — searches **session titles across every workspace** (the title,
-  the workspace directory name, and the session id). `Enter` opens that chat,
-  switching workspace when needed.
-- **This chat** — searches the **content of the current conversation**. Only
-  text both sides actually saw is searched: your prompts and the assistant's
-  visible replies. Reasoning/thinking, tool calls, tool results, synthetic
-  context and system prompts are excluded. `Enter` jumps to that message in the
-  Chat view (loading older history when needed); if no Chat anchor is available
-  it copies the full message instead.
+- **Workspace** — Searches file names and file contents in the current workspace, with `All`, `Files`, and `Text` tabs.
+- **Sessions** — Searches existing chats across all workspaces (matching session titles, workspace folder names, and session IDs). Press `Enter` to open the selected chat, switching workspaces automatically if needed.
+- **This chat** — Searches messages in the active conversation. Only visible conversation text (your prompts and the assistant's replies) is indexed; reasoning blocks, tool calls/results, and system prompts are skipped.
 
-`↑`/`↓` move through the hits, `Tab` / `Shift+Tab` cycle the three scopes,
-and `Esc` closes. Opening the panel selects the previous query, so typing or
-pasting replaces it.
+Opening the panel selects your previous query so you can type or paste right over it. File results are grouped by path with matched spans highlighted, and the footer displays the workspace root, hit counts, active search engine, and elapsed time.
 
-With a chat open, highlight a file (or a text hit inside one) in the panel and
-press **`Alt+Enter`** to insert that file as a native DSH `@` reference into the
-chat input; the panel closes and focus returns to the composer.
+## Keyboard Shortcuts
 
-## What it does
-
-- Double-tap detection means "two clean Shift presses" within 400 ms: holding
-  Shift or typing `Shift`+letter never opens the panel.
-- Content search runs on the host: the packaged ripgrep binary when resolvable
-  (`@vscode/ripgrep`, `rg` on `PATH`, or `DSH_SIMPLE_SEARCH_RG`), with a bounded
-  Node.js walk as the fallback, so the feature keeps working without ripgrep.
-- File-name search lists the workspace once (cached for 10 s while typing) and
-  ranks by a JetBrains-style scorer: exact basename, basename substring, path
-  substring, then fuzzy subsequence (so `htexec` finds `http-executor.ts`).
-  `All` returns both sections from one request.
-- `.gitignore` rules are **not** applied (`--no-ignore-vcs`): many workspaces
-  are root repos that ignore every sub-repository, and JetBrains-style search
-  is expected to look inside them. Heavy trees (`.git`, `node_modules`, `dist`,
-  `.venv*`, caches, `.dsh-memory`) are excluded explicitly instead, and both
-  engines share one exclusion list.
-- Case-sensitive (`Aa`) and regular-expression (`.*`) toggles.
-- Session titles are matched locally against the page's loaded session catalog,
-  so they need no host round-trip and always cover every workspace. Blank
-  placeholders and subagent child sessions are excluded; results are newest
-  first.
-- Current-chat content is read from the committed Session log on the host, so
-  it reaches older history outside the loaded window. The host route
-  (`/dsh-simple-search/conversation`) sits behind the same trust fence as the
-  file routes, caps the scan (5,000 messages), the response (200 hits) and the
-  observation (8 s), and caches the extraction per log cursor. Reasoning blocks
-  ("thinking"), tool calls/results and system prompts never enter the search
-  surface.
-- **@ file references from the panel**: highlight a file-name row, or a text
-  hit inside a file, and press `Alt+Enter`: the file is inserted as a native
-  DSH `@path` reference (`@"path with spaces"` for paths with whitespace) into
-  the current chat's input, the panel closes, and focus returns to the composer.
-  The caret span comes from the Session composer's public `inputActions`
-  (`captureInsertion`) through a `conversation.input.overlay` bridge; insertion
-  goes through the Session's public input facade, so the draft revision is
-  honored. When no chat is open, or the composer refuses the edit (a frozen
-  draft, an older DSH), the mention text is copied instead. The verb lives in
-  the panel's own key handler, so it exists only while the panel is open —
-  `Shift+Enter` in the composer remains DSH's newline shortcut.
-- `Tab` / `Shift+Tab` cycle Workspace → Sessions → This chat (and back) while
-  the search field has focus; clicking a scope tab still works.
-- Results group per file with the matched text highlighted; the footer shows the
-  workspace root, hit/file counts, engine, and elapsed time.
-- Appearance is a three-way choice — **Light / Dark / Follow DSH** — on the
-  bundle's page in **Plugins → Simple Search** → *Appearance*; the choice is
-  kept in browser `localStorage` (`dsh-simple-search:appearance`). *Follow DSH*
-  reads the DSH theme's effective palette (`body[data-ds-dark-theme]`, plus the
-  `theme/change` event) and tracks theme switches or OS flips; Light and Dark
-  pin the panel. Both palettes are CSS variables inside the panel and set the
-  matching `color-scheme`, so the caret, selection and scrollbars follow.
-- Activating a hit (click or `Enter`) opens the file **and closes the panel**.
-  `Enter` opens the file at the exact line through `ctx.betterSidebar.openFile`
-  when that plugin is installed; other deployments copy `path:line`, show a
-  short notice, and close a beat later.
-
-## Layout
-
-| File | Role |
+| Shortcut | Action |
 |---|---|
-| `index.js` | Host half: loopback routes `/dsh-simple-search/version`, `/dsh-simple-search/search` (`mode=text|files|all`) and `/dsh-simple-search/conversation`, workspace/session root resolution, browser-trust fence. |
-| `search.js` | Testable search core: ripgrep argv + parsing, fallback walk, skip list, matcher compilation, file listing and name ranking. |
-| `conversation.js` | Testable conversation core: human-visible extraction (human prompts + assistant text, no reasoning/tool traffic), in-session matching, excerpts and caps. |
-| `client.js` | Browser half: `shell.overlay` entry, double-Shift listener, scope switcher (Workspace / Sessions / This chat) with `Tab` cycling, panel-scoped `Alt+Enter` reference insertion with copy fallback, dialog, debounced requests, opening hits, read-only Chat anchor jump; the `conversation.input.overlay` bridge publishes the composer's public input actions, and the `plugins.bundle.config` entry renders the appearance card on the plugin's page. |
-| `tests/search.test.mjs` | `node --test` coverage for the search core. |
-| `tests/conversation.test.mjs` | `node --test` coverage for conversation extraction, thinking/tool exclusion, matching and caps. |
-| `tests/route.test.mjs` | `node --test` coverage for the fence, root resolution, session observation and response envelopes. |
-| `tests/client.test.mjs` | `node --test` coverage for the appearance preference, Follow DSH, panel palette resolution, scope switching and `Tab` cycling, title matching, message copying, `Alt+Enter` reference insertion and its copy fallback (VM plus fake React, no browser). |
+| `Shift` × 2 | Open the search panel (two clean `Shift` taps within 400 ms; holding `Shift` or typing uppercase letters won't trigger it) |
+| `Tab` / `Shift+Tab` | Cycle through `Workspace` → `Sessions` → `This chat` while the search input is focused |
+| `↑` / `↓` | Move through results |
+| `Enter` | Open the selected file, switch to the selected session, or jump to the selected chat message |
+| `Alt+Enter` | Insert the selected file as a native `@path` mention into the active chat input |
+| `Esc` | Close the panel |
 
-The routes are read-only and refuse any root outside a registered workspace or
-the calling Session's working directory; the conversation route reads one
-Session through the host's `sessionQuery` service and never opens log files
-directly. All three sit behind the same browser-trust fence as the shipped local
-routes (loopback/`trustedHosts` Host, same-origin metadata,
-`connection.requestRejection`), so the page's own auth cookie is what authorizes
-a request. The fence **fails closed**: when the host's Connection service is
-missing or cannot reject requests, the routes answer `503 auth-unavailable`
-rather than serve workspace text to a caller whose identity cannot be verified.
-The plugin also declares `connection` in `inject`, so it does not mount at all
-in a deployment without host authentication.
+Panel shortcuts are active only while the dialog is open, leaving `Shift+Enter` and other composer shortcuts untouched.
 
-## Install
+## Installation
 
-The plugin is installed into a DSH `web` profile as the `dsh-simple-search`
-bundle; the profile links this directory, which stays the source of truth.
+This plugin has zero runtime dependencies — no `npm install` is needed.
+
+- **Open Plugin Market**: Follow the install instructions on the [DSH Open Plugin Market](https://dshopen.org/plugins/dsh-simple-search/).
+- **From a local checkout**: Clone or download this repository, then either pick the `simple-search` folder under **Plugins → Add plugin** in DSH Web, or run:
+  ```sh
+  dsh plugin --profile web add /path/to/simple-search
+  ```
+  Restart DSH once if you installed via the CLI.
+
+## Features
+
+### Workspace File & Text Search
+
+- **Dual engine**: Full-text search uses ripgrep when available (`@vscode/ripgrep` bundled with DSH, `rg` on `PATH`, or `DSH_SIMPLE_SEARCH_RG`), and falls back to a bounded Node.js directory walk when ripgrep isn't present.
+- **Matching & ranking**: Supports case-sensitive (`Aa`) and regex (`.*`) toggles. File lists are cached for 10 seconds while typing and ranked by exact basename → basename substring → path substring → fuzzy subsequence (so `htexec` matches `http-executor.ts`). The `All` tab returns both file-name and text matches in a single request.
+- **Ignores `.gitignore` by design**: Multi-repo workspaces often gitignore sub-repositories at the root. To keep sub-repos searchable, the plugin runs with `--no-ignore-vcs` and instead excludes heavy directories explicitly (`.git`, `node_modules`, `dist`, `.venv*`, caches, `.dsh-memory`).
+- **Open or copy**: When `better-sidebar` is installed, clicking a result or pressing `Enter` opens the file directly in the side-card editor (jumping to the exact line for text hits). Without it, the plugin copies `path` or `path:line` to the clipboard and closes.
+- **`@` file mentions**: Highlight a file or text match and press `Alt+Enter` to insert a native DSH `@path` reference (`@"path with spaces"` when needed) into the active chat composer, closing the panel and returning focus to the input. If no chat is open or the draft isn't editable, the `@path` text is copied instead.
+
+### Session & Conversation Search
+
+- **Cross-workspace session titles**: Matches against the session catalog already loaded in the browser — no server round-trip required. Empty placeholder sessions and subagent child sessions are filtered out, with the most recently updated chats listed first.
+- **Full chat history**: **This chat** queries the committed session log on the host, reaching older messages outside the currently rendered scroll window (capped at 5,000 messages, 200 hits, and an 8-second timeout). Pressing `Enter` loads earlier history if needed and scrolls to the message in the Chat view, or copies the full message text when no chat anchor is available.
+
+### Appearance
+
+Under **Plugins → Simple Search** → *Appearance*, choose **Light**, **Dark**, or **Follow DSH** (saved in `localStorage`). *Follow DSH* tracks DSH's active theme and OS color-scheme changes in real time, updating the panel palette, caret, selection, and scrollbars together.
+
+## Security
+
+The plugin registers three read-only local routes: `/dsh-simple-search/version`, `/dsh-simple-search/search`, and `/dsh-simple-search/conversation`.
+
+- **Fail-closed authentication**: Every route sits behind DSH's `connection` auth and same-origin checks, requiring the browser page's own auth cookie. If the host `connection` service is missing or unable to verify requests, the plugin refuses to mount or responds with `503 auth-unavailable` rather than serving workspace content unauthenticated.
+- **Scoped access**: File searches are restricted to registered workspaces or the calling session's working directory. Conversation content is read strictly through the host's `sessionQuery` service rather than opening session log files directly.
+
+See [docs/SECURITY.md](docs/SECURITY.md) for the full threat model and rejection matrix.
+
+## Development & Verification
+
+| Path | Purpose |
+|---|---|
+| `index.js` | Node host entry: read-only routes, origin/auth checks, workspace root resolution |
+| `search.js` | File search core: ripgrep runner, fallback walker, exclusion list, matcher & file ranking |
+| `conversation.js` | Conversation search core: visible-message extraction, thinking/tool filtering, snippet generation |
+| `client.js` | Browser entry: search dialog, double-`Shift` listener, scope switching, `@` mentions, appearance card |
+| `tests/*.test.mjs` | `node:test` suites covering search, conversation extraction, route auth, and client behavior |
+| `scripts/verify-auth-fence.mjs` | 6-scenario loopback HTTP auth check against a throwaway local server (no running DSH needed) |
+
+Run the full check suite (also used in CI):
 
 ```sh
-npm run check
+npm run check        # syntax check + unit tests + 6 auth scenarios + npm pack dry-run
+npm test             # unit tests only
+npm run check:auth   # loopback HTTP auth-fence scenarios (expects 6/6)
 ```
 
-`npm run check` runs the syntax checks, all `node:test` files, the six
-auth-fence scenarios, and `npm pack --dry-run`; CI runs the same command.
-After changing `client.js`, refresh the page so the new client module replaces
-the loaded one. Host-half changes (`index.js`, `search.js`) are not re-evaluated
-for a linked package (Node caches the module by its real path and HMR only
-evicts modules under the profile root): remove + install from a directory whose
-path changed, or restart the host.
+Reloading changes locally:
 
-## Verify
+- **Client (`client.js`)**: Refresh the browser page to pick up edits.
+- **Host (`index.js`, `search.js`, `conversation.js`)**: Node caches `link:`-installed ESM modules by real path, so an in-place reinstall won't reload host code. Restart DSH or reinstall from a renamed directory (note that **This chat** requires `/dsh-simple-search/conversation` on the host and will report route-not-found until the host reloads).
 
-```sh
-# route registered and answering (401 without the page's auth cookie is expected)
-curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:3080/dsh-simple-search/version'
-
-# reproducible auth-fence check: real HTTP, throwaway loopback server, fake host services
-npm run check:auth   # expects 6/6 and exit 0
-
-# the live client registration
-#   cordis_inspect_query Slots.listSubTree root=shell.overlay  → occupant "simple-search"
-```
-
-`scripts/verify-auth-fence.mjs` mounts the real handlers and covers the branch a
-normal `dsh web` installation cannot reach: no `connection` service at all
-(`503 auth-unavailable`), a `null` service, a throwing check (`403`), an
-admitting session (`200`), a rejected one (`401`) and a cross-site request
-(`403`). It needs neither a running host nor a session cookie.
-
-Manual check: refresh the page, press Shift twice, type `RPC HTTP GET`, and
-press Enter on the first hit. Then switch the scope to **Sessions**, search for
-part of a chat title, and press Enter to open it (this can cross workspaces).
-Finally switch to **This chat**, search for a word from the recent conversation,
-and press Enter to jump to that message — thinking/tool text must not appear.
-Switching the Conversation view away from Chat should fall back to copy. Open
-**Plugins → Simple Search**, switch the *Appearance* card through Light / Dark /
-Follow DSH, and reopen the panel to confirm each palette; while *Follow DSH* is
-active, switching the DSH theme must update the panel immediately.
-
-The **This chat** scope needs the new host route, so it only works after the host
-half is reloaded (renamed-directory reinstall or host restart). A refreshed page
-against a stale host answers with a route-not-found error.
-
-## Development
-
-Agent-facing rules, commands, and the module map start at [AGENTS.md](AGENTS.md).
-Architecture, security, the reload matrix, and decision records live under
-[docs/](docs/); reusable workflows are in `.agents/skills/`.
+See [docs/](docs/) ([ARCHITECTURE.md](docs/ARCHITECTURE.md), [DEVELOPMENT.md](docs/DEVELOPMENT.md), [decisions/](docs/decisions/)) for architecture notes, reload rules, and ADRs, and [AGENTS.md](AGENTS.md) for agent-oriented contributor guidelines.
